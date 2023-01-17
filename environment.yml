@@ -22,6 +22,6 @@ dependencies:
   - xz=5.2.5=h7b6447c_0
   - zlib=1.2.12=h7f8727e_2
   - pip:
-    - -r team_code_transfuser/requirements.txt
+    - -train_RL/requirements.txt
     - mmsegmentation==0.25.0
     - mmdet==2.25.0
