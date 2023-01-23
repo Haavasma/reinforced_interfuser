@@ -1,17 +1,10 @@
 from typing import List
 import cv2
 
-from stable_baselines3 import PPO, common
-from stable_baselines3 import SAC
+from stable_baselines3 import PPO
 
 # from stable_baselines3.common.vec_env import DummyVecEnv
-import time
 
-from stable_baselines3.common.noise import (
-    NormalActionNoise,
-    OrnsteinUhlenbeckActionNoise,
-)
-from numba import jit
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.monitor import Monitor
 from model import LidarCenterNet
@@ -22,7 +15,6 @@ from PIL import Image
 
 from gym_carla.envs.carla_env import CarlaEnvTransFuser
 
-from stable_baselines3.common.evaluation import evaluate_policy
 
 from transfuser import TransfuserBackbone
 
@@ -38,12 +30,12 @@ def main():
     # TODO implement pure CNN learner
     # Test out training with IDUN
     resume = False
-    run_id = "39atttxx"
+    run_id = None
     eval = True
     experiment_name = f"PPO custom policy"
 
     config = GlobalConfig(setting="eval")
-    run = init_wanda(resume=resume, run_id=run_id, name=experiment_name)
+    run = init_wanda(resume=resume, name=experiment_name)
 
     config.n_layer = 4
     config.use_target_point_image = True
@@ -226,7 +218,7 @@ def main():
 
     print("LOADING MODEL")
     # rl_model.load(f"./models/{run_id}/best_model/best_model.zip")
-    rl_model = PPO.load(f"./models/{run_id}/best_model/best_model", env=env)
+    # rl_model = PPO.load(f"./models/{run_id}/best_model/best_model", env=env)
 
     # rl_model.save(f"./models/{run.id}/model")
 
@@ -245,10 +237,9 @@ def main():
     # rl_model.save(f"./models/ppo_carla_{time.time()}")
 
 
-def init_wanda(resume=False, run_id=None, name=None):
+def init_wanda(resume=False, name=None):
     return wandb.init(
         resume=resume,
-        id=run_id,
         config=rl_config,
         name=name,
         monitor_gym=True,

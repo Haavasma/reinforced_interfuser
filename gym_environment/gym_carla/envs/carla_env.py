@@ -18,7 +18,6 @@ import copy
 import numpy as np
 import random
 import time
-from skimage.transform import resize
 
 import gym
 from gym import spaces

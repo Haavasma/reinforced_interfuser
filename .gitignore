@@ -6,6 +6,9 @@ __pycache__/
 models/
 runs/
 wandb/
+/scenario_runner
+/leaderboard
+/carla
 
 # C extensions
 *.so
