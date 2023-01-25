@@ -1,6 +1,9 @@
 from typing import List
 import cv2
 
+from episode_manager import EpisodeManager, EpisodeManagerConfiguration
+
+
 from stable_baselines3 import PPO
 
 # from stable_baselines3.common.vec_env import DummyVecEnv
@@ -13,6 +16,7 @@ from config import GlobalConfig
 import torch
 from PIL import Image
 
+
 from gym_carla.envs.carla_env import CarlaEnvTransFuser
 
 
@@ -21,12 +25,16 @@ from transfuser import TransfuserBackbone
 from wandb.integration.sb3 import WandbCallback
 import wandb
 
+
 rl_config = {"policy_type": "MultiInputPolicy", "total_timesteps": 1000000}
 # experiment_name = f"CARLA_1670767940"
 
 
 def main():
     """ """
+    manager = EpisodeManager(EpisodeManagerConfiguration(2000))
+    manager.start_episode()
+
     # TODO implement pure CNN learner
     # Test out training with IDUN
     resume = False
