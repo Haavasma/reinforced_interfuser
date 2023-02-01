@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 
 models/
+output/
 runs/
 wandb/
 /scenario_runner

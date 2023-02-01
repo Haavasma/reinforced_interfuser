@@ -39,7 +39,7 @@ if conda env list; then
 
   conda activate $CONDA_ENV
 
-  for value in data_gen gym_environment train_encoder train_RL episode_manager;
+  for value in data_gen gym_environment train_encoder train_RL episode-manager;
   do 
     cd $value 
     python -m pip install -e .
