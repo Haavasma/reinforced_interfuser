@@ -25,8 +25,10 @@ def main():
 
     manager.start_episode()
 
-    for _ in range(20):
-        manager.step(Action(0.0, 0.0, False))
+    for _ in range(400):
+        state = manager.step(Action(1.0, 0.0, False, 0.0))
+        if state.running is False:
+            break
         time.sleep(0.1)
 
     manager.stop_episode()

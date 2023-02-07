@@ -1,9 +1,21 @@
 from dataclasses import dataclass
 from enum import Enum
 import pathlib
-import time
 from typing import List
+from typing_extensions import override
+from manual_control import (
+    World,
+    HUD,
+    GnssSensor,
+    CollisionSensor,
+    LaneInvasionSensor,
+    IMUSensor,
+    CameraManager,
+    get_actor_display_name,
+)
+import time
 import carla
+import pygame
 
 
 import numpy as np
@@ -98,7 +110,10 @@ class EpisodeManagerConfiguration:
 
 @dataclass
 class WorldState:
-    sensor_data: np.ndarray
+    images: List[np.ndarray]
+    lidar: np.ndarray
+    distance_to_red_light: float
+
     running: bool
 
 
@@ -107,6 +122,15 @@ class Action:
     throttle: float
     brake: float
     reverse: bool
+    steer: float
+
+    def carla_vehicle_control(self):
+        return carla.VehicleControl(
+            throttle=self.throttle,
+            brake=self.brake,
+            reverse=self.reverse,
+            steer=self.steer,
+        )
 
 
 @dataclass
@@ -121,6 +145,9 @@ class EpisodeManager:
         config: EpisodeManagerConfiguration,
         scenario_handler: ScenarioHandler = ScenarioHandler(),
     ):
+        self.config = config
+        self.scenario_handler = scenario_handler
+
         def get_episodes(training_type: TrainingType) -> List[EpisodeFiles]:
             def get_path(dir: str, file: str):
                 return config.route_directory / dir / file
@@ -140,7 +167,9 @@ class EpisodeManager:
             config.training_type,
         )
 
-        self.scenario_handler = scenario_handler
+        self.client = carla.Client(self.config.host, self.config.port)
+        self.client.set_timeout(20.0)
+        self.sim_world = self.client.get_world()
 
         return
 
@@ -149,12 +178,28 @@ class EpisodeManager:
         Starts a new route in the simulator based on the provided configurations
         """
         files = self.routes[Random().randint(0, len(self.routes))]
-        # threading, start this episode in separate thread
 
-        # TODO: Pick a random scenario from the episodes
+        print("Starting episode with route: " + str(files.route))
+
+        # TODO: Pick a random scenario from the episodes, instead of hard-coding it to 0
         self.scenario_handler.start_episode(files.route, files.scenario, "0")
 
-        print("EPISODE LOADED")
+        pygame.init()
+        pygame.font.init()
+
+        width = 1280
+        height = 720
+
+        self.display = pygame.display.set_mode(
+            (width, height), pygame.HWSURFACE | pygame.DOUBLEBUF
+        )
+        self.display.fill((0, 0, 0))
+        pygame.display.flip()
+
+        hud = HUD(width, height)
+        print("Starting world coverage")
+        self.world = AgentHandler(self.sim_world, hud, None)
+        print("SET UP WORLD")
 
         return
 
@@ -162,14 +207,58 @@ class EpisodeManager:
         """
         Runs one step/frame in the simulated scenario, performing the chosen action on the environment
         """
-
-        print("action")
         self.scenario_handler.tick()
-        return WorldState(np.array([]), self.scenario_handler.is_running())
+
+        self.world.player.apply_control(ego_vehicle_action.carla_vehicle_control())
+
+        self.world.render(self.display)
+        pygame.display.flip()
+
+        return WorldState([], np.ndarray([]), 0, True)
 
     def stop_episode(self):
         return self.scenario_handler.stop_episode()
 
-    def _act_on_environment(self, action: Action):
 
-        return
+class AgentHandler(World):
+    @override
+    def restart(self):
+
+        if self.restarted:
+            return
+        self.restarted = True
+
+        self.player_max_speed = 1.589
+        self.player_max_speed_fast = 3.713
+
+        # Keep same camera config if the camera manager exists.
+        cam_index = self.camera_manager.index if self.camera_manager is not None else 0
+        cam_pos_index = (
+            self.camera_manager.transform_index
+            if self.camera_manager is not None
+            else 0
+        )
+
+        # Get the ego vehicle
+        while self.player is None:
+            print("Waiting for the ego vehicle...")
+            time.sleep(1)
+            possible_vehicles = self.world.get_actors().filter("vehicle.*")
+            for vehicle in possible_vehicles:
+                if vehicle.attributes["role_name"] == "hero":
+                    print("Ego vehicle found")
+                    self.player = vehicle
+                    break
+
+        self.player_name = self.player.type_id
+
+        # Set up the sensors.
+        self.collision_sensor = CollisionSensor(self.player, self.hud)
+        self.lane_invasion_sensor = LaneInvasionSensor(self.player, self.hud)
+        self.gnss_sensor = GnssSensor(self.player)
+        self.imu_sensor = IMUSensor(self.player)
+        self.camera_manager = CameraManager(self.player, self.hud)
+        self.camera_manager.transform_index = cam_pos_index
+        self.camera_manager.set_sensor(cam_index, notify=False)
+        actor_type = get_actor_display_name(self.player)
+        self.hud.notification(actor_type)
