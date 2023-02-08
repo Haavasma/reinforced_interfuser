@@ -1,102 +1,19 @@
 from dataclasses import dataclass
-from enum import Enum
 import pathlib
 from typing import List
-from typing_extensions import override
-from manual_control import (
-    World,
-    HUD,
-    GnssSensor,
-    CollisionSensor,
-    LaneInvasionSensor,
-    IMUSensor,
-    CameraManager,
-    get_actor_display_name,
-)
-import time
 import carla
-import pygame
-
-
-import numpy as np
 
 
 from random import Random
+from episode_manager.agent_handler import (
+    Action,
+    AgentHandler,
+    CarConfiguration,
+    VehicleState,
+)
+from episode_manager.data import TRAINING_TYPE_TO_ROUTES, TrainingType
 
-from episode_manager.scenario_handler import ScenarioHandler
-
-
-# Create enum with types Evaluation and Training
-class TrainingType(Enum):
-    TRAINING = "training_routes"
-    VALIDATION = "validation_routes"
-    EVALUATION = "evaluation_routes"
-
-
-training_routes = [
-    ["routes_town01_long.xml", "town01_all_scenarios.json"],
-    ["routes_town01_short.xml", "town01_all_scenarios.json"],
-    ["routes_town01_tiny.xml", "town01_all_scenarios.json"],
-    ["routes_town02_long.xml", "town02_all_scenarios.json"],
-    ["routes_town02_short.xml", "town02_all_scenarios.json"],
-    ["routes_town02_tiny.xml", "town02_all_scenarios.json"],
-    ["routes_town03_long.xml", "town03_all_scenarios.json"],
-    ["routes_town03_short.xml", "town03_all_scenarios.json"],
-    ["routes_town03_tiny.xml", "town03_all_scenarios.json"],
-    ["routes_town04_long.xml", "town04_all_scenarios.json"],
-    ["routes_town04_short.xml", "town04_all_scenarios.json"],
-    ["routes_town04_tiny.xml", "town04_all_scenarios.json"],
-    ["routes_town05_long.xml", "town05_all_scenarios.json"],
-    ["routes_town05_short.xml", "town05_all_scenarios.json"],
-    ["routes_town05_tiny.xml", "town05_all_scenarios.json"],
-    ["routes_town06_long.xml", "town06_all_scenarios.json"],
-    ["routes_town06_short.xml", "town06_all_scenarios.json"],
-    ["routes_town06_tiny.xml", "town06_all_scenarios.json"],
-    ["routes_town07_short.xml", "town07_all_scenarios.json"],
-    ["routes_town07_tiny.xml", "town07_all_scenarios.json"],
-    ["routes_town10_short.xml", "town10_all_scenarios.json"],
-    ["routes_town10_tiny.xml", "town10_all_scenarios.json"],
-]
-
-validation_routes = [
-    ["routes_town05_short.xml", "town05_all_scenarios.json"],
-    ["routes_town05_tiny.xml", "town05_all_scenarios.json"],
-]
-
-evaluation_routes = [["routes_town05_long.xml", "town05_all_scenarios.json"]]
-
-
-training_type_to_routes = {
-    TrainingType.TRAINING.value: training_routes,
-    TrainingType.VALIDATION.value: validation_routes,
-    TrainingType.EVALUATION.value: evaluation_routes,
-}
-
-
-@dataclass
-class Rotation:
-    pitch: float
-    yaw: float
-    roll: float
-
-
-@dataclass
-class CarConfiguration:
-    model: str
-    transform: carla.Transform
-    camera_rotations: List[Rotation]
-
-    def __post_init__(self):
-        self.carla_camera_rotations = [
-            carla.Rotation(rotation.pitch, rotation.yaw, rotation.roll)
-            for rotation in self.camera_rotations
-        ]
-
-    def get_carla_camera_rotations(self) -> List[carla.Rotation]:
-        """
-        parses and returns current set of rotations as
-        """
-        return self.carla_camera_rotations
+from episode_manager.scenario_handler import ScenarioHandler, ScenarioState
 
 
 @dataclass
@@ -109,44 +26,33 @@ class EpisodeManagerConfiguration:
 
 
 @dataclass
-class WorldState:
-    images: List[np.ndarray]
-    lidar: np.ndarray
-    distance_to_red_light: float
-
-    running: bool
-
-
-@dataclass
-class Action:
-    throttle: float
-    brake: float
-    reverse: bool
-    steer: float
-
-    def carla_vehicle_control(self):
-        return carla.VehicleControl(
-            throttle=self.throttle,
-            brake=self.brake,
-            reverse=self.reverse,
-            steer=self.steer,
-        )
-
-
-@dataclass
 class EpisodeFiles:
     route: pathlib.Path
     scenario: pathlib.Path
+
+
+@dataclass
+class WorldState:
+    ego_vehicle_state: VehicleState
+    scenario_state: ScenarioState
+    running: bool
 
 
 class EpisodeManager:
     def __init__(
         self,
         config: EpisodeManagerConfiguration,
+        agent_handler: AgentHandler,
         scenario_handler: ScenarioHandler = ScenarioHandler(),
     ):
         self.config = config
         self.scenario_handler = scenario_handler
+
+        if agent_handler is None:
+            self.agent_handler = setup_agent_handler(config)
+
+        else:
+            self.agent_handler = agent_handler
 
         def get_episodes(training_type: TrainingType) -> List[EpisodeFiles]:
             def get_path(dir: str, file: str):
@@ -154,7 +60,7 @@ class EpisodeManager:
 
             routes = []
 
-            for path in training_type_to_routes[training_type.value]:
+            for path in TRAINING_TYPE_TO_ROUTES[training_type.value]:
                 routes.append(
                     EpisodeFiles(
                         route=get_path(training_type.value, path[0]),
@@ -166,10 +72,6 @@ class EpisodeManager:
         self.routes = get_episodes(
             config.training_type,
         )
-
-        self.client = carla.Client(self.config.host, self.config.port)
-        self.client.set_timeout(20.0)
-        self.sim_world = self.client.get_world()
 
         return
 
@@ -183,82 +85,29 @@ class EpisodeManager:
 
         # TODO: Pick a random scenario from the episodes, instead of hard-coding it to 0
         self.scenario_handler.start_episode(files.route, files.scenario, "0")
-
-        pygame.init()
-        pygame.font.init()
-
-        width = 1280
-        height = 720
-
-        self.display = pygame.display.set_mode(
-            (width, height), pygame.HWSURFACE | pygame.DOUBLEBUF
-        )
-        self.display.fill((0, 0, 0))
-        pygame.display.flip()
-
-        hud = HUD(width, height)
-        print("Starting world coverage")
-        self.world = AgentHandler(self.sim_world, hud, None)
-        print("SET UP WORLD")
+        self.agent_handler.restart()
 
         return
 
-    def step(self, ego_vehicle_action: Action) -> WorldState:
+    def step(self, ego_vehicle_action: Action) -> VehicleState:
         """
-        Runs one step/frame in the simulated scenario, performing the chosen action on the environment
+        Runs one step/frame in the simulated scenario,
+        performing the chosen action on the route environment
         """
+        self.agent_handler.apply_control(ego_vehicle_action)
+
         self.scenario_handler.tick()
 
-        self.world.player.apply_control(ego_vehicle_action.carla_vehicle_control())
-
-        self.world.render(self.display)
-        pygame.display.flip()
-
-        return WorldState([], np.ndarray([]), 0, True)
+        return self.agent_handler.read_world_state()
 
     def stop_episode(self):
+        self.agent_handler.stop()
         return self.scenario_handler.stop_episode()
 
 
-class AgentHandler(World):
-    @override
-    def restart(self):
-
-        if self.restarted:
-            return
-        self.restarted = True
-
-        self.player_max_speed = 1.589
-        self.player_max_speed_fast = 3.713
-
-        # Keep same camera config if the camera manager exists.
-        cam_index = self.camera_manager.index if self.camera_manager is not None else 0
-        cam_pos_index = (
-            self.camera_manager.transform_index
-            if self.camera_manager is not None
-            else 0
-        )
-
-        # Get the ego vehicle
-        while self.player is None:
-            print("Waiting for the ego vehicle...")
-            time.sleep(1)
-            possible_vehicles = self.world.get_actors().filter("vehicle.*")
-            for vehicle in possible_vehicles:
-                if vehicle.attributes["role_name"] == "hero":
-                    print("Ego vehicle found")
-                    self.player = vehicle
-                    break
-
-        self.player_name = self.player.type_id
-
-        # Set up the sensors.
-        self.collision_sensor = CollisionSensor(self.player, self.hud)
-        self.lane_invasion_sensor = LaneInvasionSensor(self.player, self.hud)
-        self.gnss_sensor = GnssSensor(self.player)
-        self.imu_sensor = IMUSensor(self.player)
-        self.camera_manager = CameraManager(self.player, self.hud)
-        self.camera_manager.transform_index = cam_pos_index
-        self.camera_manager.set_sensor(cam_index, notify=False)
-        actor_type = get_actor_display_name(self.player)
-        self.hud.notification(actor_type)
+def setup_agent_handler(config: EpisodeManagerConfiguration) -> AgentHandler:
+    client = carla.Client(config.host, config.port)
+    client.set_timeout(20.0)
+    sim_world = client.get_world()
+    agent_handler = AgentHandler(sim_world, config.car_config)
+    return agent_handler

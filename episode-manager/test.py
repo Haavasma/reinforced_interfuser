@@ -1,39 +1,50 @@
 import pathlib
 import time
+from episode_manager.data import TrainingType
 
-from srunner.scenariomanager.watchdog import thread
 from episode_manager.episode_manager import (
     Action,
     CarConfiguration,
     EpisodeManager,
     EpisodeManagerConfiguration,
-    TrainingType,
+    setup_agent_handler,
 )
 
 
 def main():
 
-    manager = EpisodeManager(
-        EpisodeManagerConfiguration(
-            "localhost",
-            2000,
-            TrainingType.TRAINING,
-            pathlib.Path("../routes"),
-            CarConfiguration("temp", [], []),
-        )
+    config = EpisodeManagerConfiguration(
+        "localhost",
+        2000,
+        TrainingType.TRAINING,
+        pathlib.Path("../routes"),
+        CarConfiguration("temp", [], []),
     )
 
-    manager.start_episode()
+    manager = EpisodeManager(config, setup_agent_handler(config))
 
-    for _ in range(400):
+    manager.start_episode()
+    for _ in range(20):
         state = manager.step(Action(1.0, 0.0, False, 0.0))
         if state.running is False:
             break
-        time.sleep(0.1)
 
+        print("STATE: " + str(state))
+        time.sleep(1.0)
     manager.stop_episode()
 
-    print("MANAGED TO DO SOME")
+    print("BREAK BEFORE STARTING NEXT EPISODE")
+    time.sleep(10.0)
+
+    manager.start_episode()
+    for _ in range(20):
+        state = manager.step(Action(1.0, 0.0, False, 0.0))
+        if state.running is False:
+            break
+
+        print("STATE: " + str(state))
+        time.sleep(1.0)
+    manager.stop_episode()
 
     return
 

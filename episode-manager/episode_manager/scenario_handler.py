@@ -33,6 +33,14 @@ tick_queue = 0
 scenario_started = False
 
 
+@dataclass
+class ScenarioState:
+    dist_to_traffic_light: float
+    dist_to_vehicle: float
+    dist_to_pedestrian: float
+    dist_to_route: float
+
+
 class ScenarioHandler:
     """
     Should interact with Scenario runner to set up the given route, as well as tick the scenario whenever ordered to.

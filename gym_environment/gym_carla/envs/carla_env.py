@@ -838,6 +838,8 @@ class CarlaEnvTransFuser(gym.Env):
             self.rgb, self.lidar_bev, torch.Tensor(self.speeds[-1].astype(np.uint8))
         )
 
+        
+
         self.lidar_features = lidar_features
         self.fused_features = fused_features
         self.image_features_grid = image_features_grid
