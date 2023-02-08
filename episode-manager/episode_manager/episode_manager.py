@@ -45,6 +45,7 @@ class EpisodeManager:
         agent_handler: AgentHandler,
         scenario_handler: ScenarioHandler = ScenarioHandler(),
     ):
+
         self.config = config
         self.scenario_handler = scenario_handler
 
