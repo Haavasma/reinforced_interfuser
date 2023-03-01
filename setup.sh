@@ -24,25 +24,25 @@ if [ ! -d "leaderboard" ]; then
   cd ..
 fi 
 
-source ~/anaconda3/etc/profile.d/conda.sh
-
-# Set up conda environment and install all packages
-CONDA_ENV=reinforced_interfuser
-
-if conda env list; then 
-  if conda env list | grep -q $CONDA_ENV; then
-    echo "Conda environment $CONDA_ENV already exists"
-  else
-    echo "Creating conda environment $CONDA_ENV"
-    conda env create -f environment.yml -n "$CONDA_ENV"
-  fi
-
-  conda activate $CONDA_ENV
-
-  for value in data_gen gym_environment train_encoder train_RL episode-manager;
-  do 
-    cd $value 
-    python -m pip install -e .
-    cd ..
-  done
-fi
+# source ~/anaconda3/etc/profile.d/conda.sh
+#
+# # Set up conda environment and install all packages
+# CONDA_ENV=reinforced_interfuser
+#
+# if conda env list; then 
+#   if conda env list | grep -q $CONDA_ENV; then
+#     echo "Conda environment $CONDA_ENV already exists"
+#   else
+#     echo "Creating conda environment $CONDA_ENV"
+#     conda env create -f environment.yml -n "$CONDA_ENV"
+#   fi
+#
+#   conda activate $CONDA_ENV
+#
+#   for value in data_gen gym_environment train_encoder train_RL;
+#   do 
+#     cd $value 
+#     python -m pip install -e .
+#     cd ..
+#   done
+# fi

@@ -16,4 +16,5 @@ tqdm==4.64.0
 ujson==5.1.0
 tensorboard==2.11.2
 wandb==0.13.5
-
+mmsegmentation==0.25.0
+mmdet==2.25.0

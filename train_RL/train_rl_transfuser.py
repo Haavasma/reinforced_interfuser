@@ -1,7 +1,17 @@
-from typing import List
+from typing import List, Tuple
 import cv2
 
 from episode_manager import EpisodeManager, EpisodeManagerConfiguration
+from episode_manager.agent_handler import AgentHandler
+from episode_manager.episode_manager import (
+    CarConfiguration,
+    LidarConfiguration,
+    Location,
+    RGBCameraConfiguration,
+    Rotation,
+    TrainingType,
+    Transform,
+)
 
 
 from stable_baselines3 import PPO
@@ -16,14 +26,20 @@ from config import GlobalConfig
 import torch
 from PIL import Image
 
-
-from gym_carla.envs.carla_env import CarlaEnvTransFuser
+from gym_env.env import (
+    CarlaEnvironment,
+    CarlaEnvironmentConfiguration,
+    PIDController,
+)
+from reward_functions.main import reward_function
 
 
 from transfuser import TransfuserBackbone
 
 from wandb.integration.sb3 import WandbCallback
 import wandb
+
+from vision_modules.transfuser import TransfuserVisionModule
 
 
 rl_config = {"policy_type": "MultiInputPolicy", "total_timesteps": 1000000}
@@ -32,8 +48,6 @@ rl_config = {"policy_type": "MultiInputPolicy", "total_timesteps": 1000000}
 
 def main():
     """ """
-    manager = EpisodeManager(EpisodeManagerConfiguration(2000))
-    manager.start_episode()
 
     # TODO implement pure CNN learner
     # Test out training with IDUN
@@ -43,169 +57,104 @@ def main():
     experiment_name = f"PPO custom policy"
 
     config = GlobalConfig(setting="eval")
-    run = init_wanda(resume=resume, name=experiment_name)
+    # run = init_wanda(resume=resume, name=experiment_name)
 
     config.n_layer = 4
     config.use_target_point_image = True
 
-    model = LidarCenterNet(
-        config, "cuda", "transFuser", "regnety_032", "regnety_032", use_velocity=False
-    )
-
-    # Model was trained with Sync. Batch Norm. Need to convert it otherwise parameters will load incorrectly.
-    # model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
-
-    state_dict = torch.load(
+    backbone = setup_transfuser_backbone(
+        config,
         "/lhome/haavasma/Documents/fordypningsoppgave/repositories/models/transfuser/model_ckpt/models_2022/transfuser/model_seed2_39.pth",
-        map_location="cuda:0",
     )
 
-    state_dict = {k[7:]: v for k, v in state_dict.items()}
-    model.load_state_dict(state_dict, strict=False)
-    model.cuda()
-    model.eval()
+    transfuser_img_size = (960, 480)
+    fov = 103
 
-    def prepare_image(
-        left: np.ndarray, front: np.ndarray, right: np.ndarray
-    ) -> torch.Tensor:
-        rgb = []
+    transfuser_vision_module = TransfuserVisionModule(backbone, config)
 
-        for image in [left, front, right]:
-            rgb_pos = cv2.cvtColor(image[:, :, :3], cv2.COLOR_BGR2RGB)
-            rgb_pos = scale_crop(
-                Image.fromarray(rgb_pos),
-                config.scale,
-                config.img_width,
-                config.img_width,
-                config.img_resolution[0],
-                config.img_resolution[0],
-            )
-            rgb.append(rgb_pos)
-        rgb = np.concatenate(rgb, axis=1)
+    episode_config = EpisodeManagerConfiguration(
+        render_client=True,
+        car_config=CarConfiguration(
+            "test",
+            [
+                RGBCameraConfiguration(
+                    transfuser_img_size[0],
+                    transfuser_img_size[1],
+                    fov,
+                    Transform(Location(1.3, 0, 2.3), Rotation(0, -60, 0)),
+                ),
+                RGBCameraConfiguration(
+                    transfuser_img_size[0],
+                    transfuser_img_size[1],
+                    fov,
+                    Transform(Location(1.3, 0, 2.3), Rotation(0, 0, 0)),
+                ),
+                RGBCameraConfiguration(
+                    transfuser_img_size[0],
+                    transfuser_img_size[1],
+                    fov,
+                    Transform(Location(1.3, 0, 2.3), Rotation(0, 60, 0)),
+                ),
+            ],
+            LidarConfiguration(enabled=True),
+        ),
+    )
+    episode_manager = EpisodeManager(episode_config)
+    speed_controller = PIDController()
 
-        image = Image.fromarray(rgb)
-        image_degrees = []
-        rgb = torch.from_numpy(
-            shift_x_scale_crop(
-                image, scale=config.scale, crop=config.img_resolution, crop_shift=0
-            )
-        ).unsqueeze(0)
-        image_degrees.append(rgb.to("cuda", dtype=torch.float32))
-        image = torch.cat(image_degrees, dim=0)
-
-        return image
-
-    def shift_x_scale_crop(image, scale, crop, crop_shift=0):
-        crop_h, crop_w = crop
-        (width, height) = (int(image.width // scale), int(image.height // scale))
-        im_resized = image.resize((width, height))
-        image = np.array(im_resized)
-        start_y = height // 2 - crop_h // 2
-        start_x = width // 2 - crop_w // 2
-
-        # only shift in x direction
-        start_x += int(crop_shift // scale)
-        cropped_image = image[start_y : start_y + crop_h, start_x : start_x + crop_w]
-        cropped_image = np.transpose(cropped_image, (2, 0, 1))
-        return cropped_image
-
-    def scale_crop(image, scale=1, start_x=0, crop_x=None, start_y=0, crop_y=None):
-        (width, height) = (image.width // scale, image.height // scale)
-        if scale != 1:
-            image = image.resize((width, height))
-        if crop_x is None:
-            crop_x = width
-        if crop_y is None:
-            crop_y = height
-
-        image = np.asarray(image)
-        cropped_image = image[start_y : start_y + crop_y, start_x : start_x + crop_x]
-        return cropped_image
-
-    # @jit(nopython=True)
-    def prepare_lidar(point_cloud: List[List[float]]) -> np.ndarray:
-        point_cloud = np.array(point_cloud)
-        lidar_transformed = point_cloud
-
-        def lidar_to_histogram_features(lidar):
-            """
-            Convert LiDAR point cloud into 2-bin histogram over 256x256 grid
-            """
-
-            def splat_points(point_cloud):
-                # 256 x 256 grid
-                pixels_per_meter = 8
-                hist_max_per_pixel = 5
-                x_meters_max = 16
-                y_meters_max = 32
-                xbins = np.linspace(
-                    -x_meters_max, x_meters_max, 32 * pixels_per_meter + 1
-                )
-                ybins = np.linspace(-y_meters_max, 0, 32 * pixels_per_meter + 1)
-                hist = np.histogramdd(
-                    point_cloud[..., :2],
-                    bins=(xbins, ybins),
-                )[0]
-                hist[hist > hist_max_per_pixel] = hist_max_per_pixel
-                overhead_splat = hist / hist_max_per_pixel
-                return overhead_splat
-
-            below = lidar[lidar[..., 2] <= -2.3]
-            above = lidar[lidar[..., 2] > -2.3]
-            below_features = splat_points(below)
-            above_features = splat_points(above)
-            features = np.stack([above_features, below_features], axis=-1)
-            features = np.transpose(features, (2, 0, 1)).astype(np.float32)
-            features = np.rot90(features, -1, axes=(1, 2)).copy()
-            return features
-
-        lidar_transformed[:, 1] *= -1  # invert
-        lidar_transformed = np.expand_dims(
-            lidar_to_histogram_features(lidar_transformed), 0
-        )
-        lidar_transformed_degrees = lidar_transformed
-        lidar_bev = lidar_transformed_degrees[::-1]
-
-        lidar_bev = np.append(
-            lidar_bev,
-            np.zeros((1, 1, 256, 256)),
-            axis=1,
-        )
-
-        return lidar_bev
-
-    backbone: TransfuserBackbone = model._model
-
-    env = CarlaEnvTransFuser(
-        backbone,
-        (512,),
-        model.seg_decoder,
-        model.depth_decoder,
-        model.pred_bev,
-        prepare_image,
-        prepare_lidar,
-        render_env=False,
+    env = CarlaEnvironment(
+        CarlaEnvironmentConfiguration(
+            speed_goal_actions=[-2.0, -1.0, 0.0, 2.0, 4.0, 5.0],
+            steering_actions=[
+                -0.3,
+                -0.27,
+                -0.24,
+                -0.21,
+                -0.18,
+                -0.15,
+                -0.12,
+                -0.09,
+                -0.06,
+                -0.03,
+                0.0,
+                0.03,
+                0.06,
+                0.09,
+                0.12,
+                0.15,
+                0.18,
+                0.21,
+                0.24,
+                0.27,
+                0.3,
+            ],
+            discrete_actions=True,
+        ),
+        episode_manager,
+        transfuser_vision_module,
+        reward_function,
+        speed_controller,
     )
 
     env = Monitor(env)
 
-    wandb_callback = WandbCallback(
-        # gradient_save_freq=10,
-        model_save_path=f"./models/{run.id}/",
-        model_save_freq=2048,
-    )
+    # wandb_callback = WandbCallback(
+    #     # gradient_save_freq=10,
+    #     model_save_path=f"./models/{run.id}/",
+    #     model_save_freq=2048,
+    # )
 
-    eval_callback = EvalCallback(
-        env,
-        best_model_save_path=f"./models/{run.id}/best_model/",
-        log_path=f"./models/{run.id}/logs/",
-        eval_freq=10240,
-        deterministic=True,
-        render=False,
-        n_eval_episodes=5,
-        callback_after_eval=wandb_callback,
-        verbose=1,
-    )
+    # eval_callback = EvalCallback(
+    #     env,
+    #     best_model_save_path=f"./models/{run.id}/best_model/",
+    #     log_path=f"./models/{run.id}/logs/",
+    #     eval_freq=10240,
+    #     deterministic=True,
+    #     render=False,
+    #     n_eval_episodes=5,
+    #     # callback_after_eval=wandb_callback,
+    #     verbose=1,
+    # )
 
     policy_kwargs = dict(net_arch=[1024, 512, dict(vf=[256], pi=[256])])
 
@@ -219,28 +168,29 @@ def main():
         learning_rate=1e-4,
         # tau=0.005,
         # action_noise=NormalActionNoise(np.array([1.0, 0.0]), np.array([0.5, 0.3])),
-        tensorboard_log=f"runs/{run.id}",
+        # tensorboard_log=f"runs/{run.id}",
         policy_kwargs=policy_kwargs,
         device="cuda",
     )
 
-    print("LOADING MODEL")
     # rl_model.load(f"./models/{run_id}/best_model/best_model.zip")
     # rl_model = PPO.load(f"./models/{run_id}/best_model/best_model", env=env)
 
     # rl_model.save(f"./models/{run.id}/model")
 
-    obs = env.reset()
-    if eval:
-        for _ in range(30000):
-            action, _states = rl_model.predict(obs, deterministic=True)
-            obs, rewards, dones, info = env.step(action)
-            if dones:
-                obs = env.reset()
+    # obs = env.reset()
+    # if eval:
+    #     for _ in range(30000):
+    #         action, _states = rl_model.predict(obs, deterministic=True)
+    #         obs, rewards, dones, info = env.step(action)
+    #         if dones:
+    #             obs = env.reset()
+    #
+    #     return
 
-        return
-
-    rl_model.learn(total_timesteps=50_000, callback=[wandb_callback, eval_callback])
+    rl_model.learn(
+        total_timesteps=50_000
+    )  # , callback=[wandb_callback, eval_callback])
     rl_model.save(f"./models/{run.id}/model")
     # rl_model.save(f"./models/ppo_carla_{time.time()}")
 
@@ -255,6 +205,31 @@ def init_wanda(resume=False, name=None):
         entity="haavasma",
         sync_tensorboard=True,
     )
+
+
+def setup_transfuser_backbone(
+    config: GlobalConfig, file_path: str
+) -> TransfuserBackbone:
+    model = LidarCenterNet(
+        config, "cuda", "transFuser", "regnety_032", "regnety_032", use_velocity=False
+    )
+
+    # Model was trained with Sync. Batch Norm. Need to convert it otherwise parameters will load incorrectly.
+    # model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+
+    state_dict = torch.load(
+        file_path,
+        map_location="cuda:0",
+    )
+
+    state_dict = {k[7:]: v for k, v in state_dict.items()}
+    model.load_state_dict(state_dict, strict=False)
+    model.cuda()
+    model.eval()
+
+    backbone: TransfuserBackbone = model._model
+
+    return backbone
 
 
 if __name__ == "__main__":
