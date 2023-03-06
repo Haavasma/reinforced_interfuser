@@ -1,46 +1,30 @@
-from typing import List, Tuple
-import cv2
-
+import torch
 from episode_manager import EpisodeManager, EpisodeManagerConfiguration
-from episode_manager.agent_handler import AgentHandler
 from episode_manager.episode_manager import (
     CarConfiguration,
-    LidarConfiguration,
     Location,
-    RGBCameraConfiguration,
     Rotation,
-    TrainingType,
     Transform,
 )
-
-
-from stable_baselines3 import PPO
-
-# from stable_baselines3.common.vec_env import DummyVecEnv
-
-from stable_baselines3.common.callbacks import EvalCallback
-from stable_baselines3.common.monitor import Monitor
-from model import LidarCenterNet
-import numpy as np
-from config import GlobalConfig
-import torch
-from PIL import Image
-
 from gym_env.env import (
     CarlaEnvironment,
     CarlaEnvironmentConfiguration,
     PIDController,
 )
-from reward_functions.main import reward_function
+from stable_baselines3 import PPO
 
+# from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.callbacks import EvalCallback
+from stable_baselines3.common.monitor import Monitor
 
-from transfuser import TransfuserBackbone
-
-from wandb.integration.sb3 import WandbCallback
 import wandb
-
+from config import GlobalConfig
+from episode_configs import TRANSFUSER_CONFIG
+from model import LidarCenterNet
+from reward_functions.main import reward_function
+from transfuser import TransfuserBackbone
 from vision_modules.transfuser import TransfuserVisionModule
-
+from wandb.integration.sb3 import WandbCallback
 
 rl_config = {"policy_type": "MultiInputPolicy", "total_timesteps": 1000000}
 # experiment_name = f"CARLA_1670767940"
@@ -67,39 +51,9 @@ def main():
         "/lhome/haavasma/Documents/fordypningsoppgave/repositories/models/transfuser/model_ckpt/models_2022/transfuser/model_seed2_39.pth",
     )
 
-    transfuser_img_size = (960, 480)
-    fov = 103
-
     transfuser_vision_module = TransfuserVisionModule(backbone, config)
 
-    episode_config = EpisodeManagerConfiguration(
-        render_client=True,
-        car_config=CarConfiguration(
-            "test",
-            [
-                RGBCameraConfiguration(
-                    transfuser_img_size[0],
-                    transfuser_img_size[1],
-                    fov,
-                    Transform(Location(1.3, 0, 2.3), Rotation(0, -60, 0)),
-                ),
-                RGBCameraConfiguration(
-                    transfuser_img_size[0],
-                    transfuser_img_size[1],
-                    fov,
-                    Transform(Location(1.3, 0, 2.3), Rotation(0, 0, 0)),
-                ),
-                RGBCameraConfiguration(
-                    transfuser_img_size[0],
-                    transfuser_img_size[1],
-                    fov,
-                    Transform(Location(1.3, 0, 2.3), Rotation(0, 60, 0)),
-                ),
-            ],
-            LidarConfiguration(enabled=True),
-        ),
-    )
-    episode_manager = EpisodeManager(episode_config)
+    episode_manager = EpisodeManager(TRANSFUSER_CONFIG)
     speed_controller = PIDController()
 
     env = CarlaEnvironment(
