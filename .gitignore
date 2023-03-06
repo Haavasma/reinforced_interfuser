@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+gym_environment/
+
 models/
 output/
 runs/
