@@ -1,6 +1,8 @@
+import math
 from dataclasses import dataclass
 from typing import Any, List, Tuple
-from episode_manager.episode_manager import Location
+
+from episode_manager.agent_handler.models import Location, Transform
 from gym_env.env import WorldState
 
 
@@ -19,30 +21,85 @@ class Reward:
 
 
 def reward_function(state: WorldState) -> Tuple[float, bool]:
-    # TODO: Implement this reward function
-
-    # Calculate desired speed
+    # Speed reward
     dist_to_hazard = closest_hazard(state)
     speed_limit = state.ego_vehicle_state.privileged.speed_limit
     speed = state.ego_vehicle_state.speed
 
     desired_speed = calculate_desired_speed(speed_limit, dist_to_hazard)
     speed_reward = calculate_speed_reward(speed, desired_speed)
+    if speed_reward < 0:
+        return -1, True
 
-    # TODO: Calculate angle reward
+    # Angle reward
+    ego_vehicle_location = state.ego_vehicle_state.privileged.transform.location
+    waypoints = state.scenario_state.global_plan_world_coord
 
-    ego_vehicle_location = state.ego_vehicle_state.privileged.ego_vehicle_location
-    waypoints = state.scenario_state.global_plan
+    closest_waypoint_index, distance_diff = _get_closest_waypoint(
+        ego_vehicle_location, waypoints
+    )
 
-    closest_waypoint_index = get_closest_waypoint_index(ego_vehicle_location, waypoints)
+    wp_0, wp_1 = (
+        waypoints[closest_waypoint_index][0].location,
+        waypoints[(closest_waypoint_index + 1) % len(waypoints)][0].location,
+    )
+
+    print("WAYPOINTS: ", wp_0, wp_1)
+    angle = _calculate_angle(wp_0, wp_1)
+
+    angle_diff = _calculate_radian_difference(
+        angle, math.radians(state.ego_vehicle_state.compass - 90)
+    )
+    angle_reward = _calculate_angle_reward(angle_diff)
+    if angle_reward < 0:
+        return -1, True
+
+    # Distance reward
+    distance_reward = _calculate_distance_reward(distance_diff)
+    if distance_reward < 0:
+        return -1, True
 
     # Calculate angle between ego vehicle and closest waypoint
-    angle_reward = 1
 
-    # TODO: Calculate distance reward
-    distance_reward = 1
+    reward = Reward(speed_reward, angle_reward, distance_reward)
+    print("REWARD: ", reward)
 
     return Reward(speed_reward, angle_reward, distance_reward).calculate_reward(), False
+
+
+def _calculate_distance_reward(distance: float) -> float:
+    max = 2.0
+
+    if distance > max:
+        return -1
+
+    return 1 - distance / max
+
+
+def _calculate_angle_reward(diff: float) -> float:
+    # Angle reward
+    max_diff = math.pi / 2
+
+    if abs(diff) > max_diff:
+        return -1.0
+
+    reward = (max_diff - diff) / max_diff
+
+    return reward
+
+
+def _calculate_angle(point_1: Location, point_2: Location) -> float:
+    dx = point_2.x - point_1.x
+    dy = point_2.y - point_1.y
+
+    print("DX: ", dx)
+    print("DY: ", dy)
+    return math.atan2(dy, dx)
+
+
+def _calculate_radian_difference(angle_1: float, angle_2: float) -> float:
+    diff = angle_1 - angle_2
+    return abs(math.atan2(math.sin(diff), math.cos(diff)))
 
 
 def closest_hazard(state: WorldState) -> float:
@@ -60,23 +117,27 @@ def closest_hazard(state: WorldState) -> float:
     return closest if closest != max_dist else -1
 
 
-def get_closest_waypoint_index(
-    ego_vehicle_location: Location, waypoints: List[Any]
-) -> int:
-    closest = 0
+def _get_closest_waypoint(
+    ego_vehicle_location: Location,
+    waypoints: List[Tuple[Transform, Any]],
+) -> Tuple[int, float]:
+    closest_index = 0
+    closest_distance = 1000000000.0
     for index, waypoint in enumerate(waypoints):
-        if (
-            vector_distance(
-                waypoint.x,
-                waypoint.y,
-                ego_vehicle_location.x,
-                ego_vehicle_location.y,
-            )
-            < closest
-        ):
-            closest = index
 
-    return closest
+        waypoint_location = waypoint[0].location
+
+        distance = vector_distance(
+            waypoint_location.x,
+            waypoint_location.y,
+            ego_vehicle_location.x,
+            ego_vehicle_location.y,
+        )
+        if distance < closest_distance:
+            closest_index = index
+            closest_distance = distance
+
+    return closest_index, closest_distance
 
 
 def vector_distance(x1: float, y1: float, x2: float, y2: float) -> float:

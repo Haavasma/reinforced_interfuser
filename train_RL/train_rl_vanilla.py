@@ -21,15 +21,13 @@ rl_config = {"policy_type": "MultiInputPolicy", "total_timesteps": 1000000}
 def main():
     """ """
 
-    # TODO implement pure CNN learner
-    # Test out training with IDUN
     resume = False
-    run_id = None
     eval = True
     experiment_name = f"PPO custom policy"
 
     episode_manager = EpisodeManager(BASELINE_CONFIG)
     speed_controller = PIDController()
+    run = init_wanda(resume=resume, name=experiment_name)
 
     env = CarlaEnvironment(
         {
@@ -69,23 +67,22 @@ def main():
 
     env = Monitor(env)
 
-    # wandb_callback = WandbCallback(
-    #     # gradient_save_freq=10,
-    #     model_save_path=f"./models/{run.id}/",
-    #     model_save_freq=2048,
-    # )
+    wandb_callback = WandbCallback(
+        # gradient_save_freq=10,
+        model_save_path=f"./models/{run.id}/",
+        model_save_freq=2048,
+    )
 
-    # eval_callback = EvalCallback(
-    #     env,
-    #     best_model_save_path=f"./models/{run.id}/best_model/",
-    #     log_path=f"./models/{run.id}/logs/",
-    #     eval_freq=10240,
-    #     deterministic=True,
-    #     render=False,
-    #     n_eval_episodes=5,
-    #     # callback_after_eval=wandb_callback,
-    #     verbose=1,
-    # )
+    eval_callback = EvalCallback(
+        env,
+        best_model_save_path=f"./models/{run.id}/best_model/",
+        log_path=f"./models/{run.id}/logs/",
+        eval_freq=10240,
+        deterministic=True,
+        render=False,
+        n_eval_episodes=5,
+        verbose=1,
+    )
 
     policy_kwargs = dict(net_arch=[1024, 512, dict(vf=[256], pi=[256])])
 
@@ -119,9 +116,7 @@ def main():
     #
     #     return
 
-    rl_model.learn(
-        total_timesteps=50_000
-    )  # , callback=[wandb_callback, eval_callback])
+    rl_model.learn(total_timesteps=50_000, callback=[wandb_callback, eval_callback])
     rl_model.save(f"./models/{run.id}/model")
     # rl_model.save(f"./models/ppo_carla_{time.time()}")
 
