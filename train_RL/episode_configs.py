@@ -48,36 +48,41 @@ TRANSFUSER_CONFIG = EpisodeManagerConfiguration(
 _baseline_image_size = (120, 120)
 
 
-BASELINE_CONFIG = EpisodeManagerConfiguration(
-    render_client=True,
-    car_config=CarConfiguration(
-        "TODO",
-        [
+def baseline_config(
+    port=2000, traffic_manager_port=2001
+) -> EpisodeManagerConfiguration:
+    return EpisodeManagerConfiguration(
+        render_client=False,
+        port=port,
+        traffic_manager_port=traffic_manager_port,
+        car_config=CarConfiguration(
+            "TODO",
+            [
+                {
+                    "width": _baseline_image_size[0],
+                    "height": _baseline_image_size[1],
+                    "fov": _fov,
+                    "transform": Transform(Location(1.3, 0, 2.3), Rotation(0, -60, 0)),
+                },
+                {
+                    "width": _baseline_image_size[0],
+                    "height": _baseline_image_size[1],
+                    "fov": _fov,
+                    "transform": Transform(Location(1.3, 0, 2.3), Rotation(0, 0, 0)),
+                },
+                {
+                    "width": _baseline_image_size[0],
+                    "height": _baseline_image_size[1],
+                    "fov": _fov,
+                    "transform": Transform(Location(1.3, 0, 2.3), Rotation(0, 60, 0)),
+                },
+            ],
             {
-                "width": _baseline_image_size[0],
-                "height": _baseline_image_size[1],
-                "fov": _fov,
-                "transform": Transform(Location(1.3, 0, 2.3), Rotation(0, -60, 0)),
+                "enabled": False,
+                "channels": 32,
+                "range": 5000,
+                "shape": (3, 256, 256),
+                "transform": Transform(Location(1.3, 0, 2.5), Rotation(0, -90, 0)),
             },
-            {
-                "width": _baseline_image_size[0],
-                "height": _baseline_image_size[1],
-                "fov": _fov,
-                "transform": Transform(Location(1.3, 0, 2.3), Rotation(0, 0, 0)),
-            },
-            {
-                "width": _baseline_image_size[0],
-                "height": _baseline_image_size[1],
-                "fov": _fov,
-                "transform": Transform(Location(1.3, 0, 2.3), Rotation(0, 60, 0)),
-            },
-        ],
-        {
-            "enabled": False,
-            "channels": 32,
-            "range": 5000,
-            "shape": (3, 256, 256),
-            "transform": Transform(Location(1.3, 0, 2.5), Rotation(0, -90, 0)),
-        },
-    ),
-)
+        ),
+    )

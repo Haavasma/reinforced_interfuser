@@ -1,88 +1,132 @@
-from episode_manager import EpisodeManager, EpisodeManagerConfiguration
+import argparse
+from typing import Callable, List, TypedDict
+
+import gym
+from episode_manager import EpisodeManager
 from gym_env.env import (
     CarlaEnvironment,
+    CarlaEnvironmentConfiguration,
     PIDController,
 )
 from stable_baselines3 import PPO
-
-# from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.utils import set_random_seed
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
 import wandb
-from episode_configs import BASELINE_CONFIG
+from config import GlobalConfig
+from episode_configs import baseline_config
 from reward_functions.main import reward_function
+from vision_modules.transfuser import TransfuserVisionModule, setup_transfuser_backbone
 from wandb.integration.sb3 import WandbCallback
 
 rl_config = {"policy_type": "MultiInputPolicy", "total_timesteps": 1000000}
-# experiment_name = f"CARLA_1670767940"
 
 
-def main():
-    """ """
+class TrainingConfig(TypedDict):
+    ports: List[str]
+    traffic_manager_ports: List[str]
+    resume: bool
+    eval: bool
+    vision_module: str
+    weights: str
 
-    resume = False
-    eval = True
-    experiment_name = f"PPO custom policy"
 
-    episode_manager = EpisodeManager(BASELINE_CONFIG)
-    speed_controller = PIDController()
-    run = init_wanda(resume=resume, name=experiment_name)
+def validate_training_config(config: TrainingConfig) -> None:
+    """
+    Throws an error if the config is not valid for the given system.
+    """
+    print("CONFIG: ", config)
 
-    env = CarlaEnvironment(
-        {
-            "speed_goal_actions": [-2.0, -1.0, 0.0, 2.0, 4.0, 5.0],
-            "steering_actions": [
-                -0.3,
-                -0.27,
-                -0.24,
-                -0.21,
-                -0.18,
-                -0.15,
-                -0.12,
-                -0.09,
-                -0.06,
-                -0.03,
-                0.0,
-                0.03,
-                0.06,
-                0.09,
-                0.12,
-                0.15,
-                0.18,
-                0.21,
-                0.24,
-                0.27,
-                0.3,
-            ],
-            "discrete_actions": True,
-            "continuous_speed_range": (0, 0),
-            "continuous_steering_range": (0, 0),
-        },
-        episode_manager,
-        None,
-        reward_function,
-        speed_controller,
-    )
+    if len(config["ports"]) != len(config["traffic_manager_ports"]):
+        raise ValueError("The number of ports and traffic manager ports must be equal")
 
-    env = Monitor(env)
+    if config["vision_module"] != "" and config["weights"] == "":
+        raise ValueError(
+            "If a vision module is specified, a weights file must be specified as well"
+        )
 
-    wandb_callback = WandbCallback(
-        # gradient_save_freq=10,
-        model_save_path=f"./models/{run.id}/",
-        model_save_freq=2048,
-    )
+    for port, traffic_manager_port in zip(
+        config["ports"], config["traffic_manager_ports"]
+    ):
+        if not port.isdigit():
+            raise ValueError(f"Port {port} is not a valid port number")
+        if not traffic_manager_port.isdigit():
+            raise ValueError(
+                f"Traffic manager port {traffic_manager_port} is not a valid port number"
+            )
 
-    eval_callback = EvalCallback(
-        env,
-        best_model_save_path=f"./models/{run.id}/best_model/",
-        log_path=f"./models/{run.id}/logs/",
-        eval_freq=10240,
-        deterministic=True,
-        render=False,
-        n_eval_episodes=5,
-        verbose=1,
-    )
+
+def train(config: TrainingConfig) -> None:
+    experiment_name = "PPO custom policy"
+
+    validate_training_config(config)
+
+    carla_config: CarlaEnvironmentConfiguration = {
+        "speed_goal_actions": [-2.0, -1.0, 0.0, 2.0, 4.0, 5.0],
+        "steering_actions": [
+            -0.3,
+            -0.27,
+            -0.24,
+            -0.21,
+            -0.18,
+            -0.15,
+            -0.12,
+            -0.09,
+            -0.06,
+            -0.03,
+            0.0,
+            0.03,
+            0.06,
+            0.09,
+            0.12,
+            0.15,
+            0.18,
+            0.21,
+            0.24,
+            0.27,
+            0.3,
+        ],
+        "discrete_actions": True,
+        "continuous_speed_range": (0, 0),
+        "continuous_steering_range": (0, 0),
+    }
+
+    environments: List[Callable[[], gym.Env]] = []
+
+    for i in range(len(config["ports"])):
+        environments.append(
+            make_carla_env(
+                carla_config,
+                int(config["ports"][i]),
+                int(config["traffic_manager_ports"][i]),
+                config["vision_module"],
+                config["weights"],
+                i,
+                seed=69,
+            )
+        )
+
+    env = DummyVecEnv(environments)
+    # run = init_wandb(resume=config["resume"], name=experiment_name)
+
+    # wandb_callback = WandbCallback(
+    #     # gradient_save_freq=10,
+    #     model_save_path=f"./models/{run.id}/",
+    #     model_save_freq=2048,
+    # )
+
+    # eval_callback = EvalCallback(
+    #     env,
+    #     best_model_save_path=f"./models/{run.id}/best_model/",
+    #     log_path=f"./models/{run.id}/logs/",
+    #     eval_freq=10240,
+    #     deterministic=True,
+    #     render=False,
+    #     n_eval_episodes=5,
+    #     verbose=1,
+    # )
 
     policy_kwargs = dict(net_arch=[1024, 512, dict(vf=[256], pi=[256])])
 
@@ -116,12 +160,13 @@ def main():
     #
     #     return
 
-    rl_model.learn(total_timesteps=50_000, callback=[wandb_callback, eval_callback])
+    rl_model.learn(total_timesteps=50_000, callback=[])
     rl_model.save(f"./models/{run.id}/model")
-    # rl_model.save(f"./models/ppo_carla_{time.time()}")
+
+    return
 
 
-def init_wanda(resume=False, name=None):
+def init_wandb(resume=False, name=None):
     return wandb.init(
         resume=resume,
         config=rl_config,
@@ -133,5 +178,92 @@ def init_wanda(resume=False, name=None):
     )
 
 
+def make_carla_env(
+    carla_config: CarlaEnvironmentConfiguration,
+    port: int,
+    traffic_manager_port: int,
+    vision_module_name: str,
+    weights_file: str,
+    rank: int,
+    seed: int = 0,
+) -> Callable[[], gym.Env]:
+    def _init() -> gym.Env:
+        episode_manager = EpisodeManager(
+            baseline_config(port=port, traffic_manager_port=traffic_manager_port)
+        )
+        speed_controller = PIDController()
+
+        vision_module = None
+
+        if vision_module_name == "transfuser":
+            config = GlobalConfig(setting="eval")
+            backbone = setup_transfuser_backbone(
+                config, weights_file, device=f"cuda:{rank}"
+            )
+            vision_module = TransfuserVisionModule(backbone, config)
+
+        elif vision_module == "interfuser":
+            raise NotImplementedError("Interfuser not implemented yet")
+
+        env = CarlaEnvironment(
+            carla_config,
+            episode_manager,
+            vision_module,
+            reward_function,
+            speed_controller,
+        )
+
+        env.seed(seed + rank)
+        return env
+
+    set_random_seed(seed)
+    return _init
+
+
+class ScriptArguments(TypedDict):
+    port: List[int]
+    traffic_manager_ports: List[int]
+    gpus: List[int]
+
+
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Parse command line arguments")
+
+    parser.add_argument(
+        "--ports", type=str, default="2000", help="Port number (default: 2000)"
+    )
+    parser.add_argument(
+        "--traffic-manager-ports",
+        type=str,
+        default="8000",
+        help="Traffic manager port number (default: 8000, example: 8000,8001)",
+    )
+
+    parser.add_argument(
+        "--resume", action="store_true", help="Resume training (default: False)"
+    )
+
+    parser.add_argument(
+        "--vision-module",
+        type=str,
+        default="",
+        help="Vision module (default: None)",
+    )
+    parser.add_argument("--weights", type=str, default="", help="Path to weights file")
+
+    args = parser.parse_args()
+
+    _ = [x.strip() for x in "".split(",")]
+
+    train(
+        {
+            "ports": [port.strip() for port in (args.ports).split(",")],
+            "traffic_manager_ports": [
+                port.strip() for port in (args.traffic_manager_ports).split(",")
+            ],
+            "resume": bool(args.resume),
+            "vision_module": args.vision_module,
+            "weights": args.weights,
+            "eval": True,
+        }
+    )

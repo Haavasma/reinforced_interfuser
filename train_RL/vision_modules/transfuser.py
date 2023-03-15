@@ -1,19 +1,15 @@
 from typing import List
-from PIL.Image import Image
-from episode_manager.episode_manager import Action, WorldState
-from config import GlobalConfig
-
-import torch
 
 import cv2
-
-
-from gym_env.env import VisionModule
-
-
 import numpy as np
 import pygame
+import torch
+from episode_manager.episode_manager import Action, WorldState
+from gym_env.env import VisionModule
+from PIL.Image import Image
 
+from config import GlobalConfig
+from model import LidarCenterNet
 from transfuser import TransfuserBackbone
 
 
@@ -60,9 +56,6 @@ class TransfuserVisionModule(VisionModule):
     def _prepare_image(
         self, left: np.ndarray, front: np.ndarray, right: np.ndarray
     ) -> torch.Tensor:
-        print("LEFT: ", left.shape)
-        print("LEFT IMAGE: ", left)
-
         for image in [left, front, right]:
             rgb_pos = cv2.cvtColor(image[:, :, :3], cv2.COLOR_BGR2RGB)
             rgb_pos = _scale_crop(
@@ -119,3 +112,22 @@ def _scale_crop(image, scale=1, start_x=0, crop_x=None, start_y=0, crop_y=None):
     image = np.asarray(image)
     cropped_image = image[start_y : start_y + crop_y, start_x : start_x + crop_x]
     return cropped_image
+
+
+def setup_transfuser_backbone(
+    config: GlobalConfig, file_path: str, device: str = "cuda:0"
+) -> TransfuserBackbone:
+    model = LidarCenterNet(
+        config, device, "transFuser", "regnety_032", "regnety_032", use_velocity=False
+    )
+
+    state_dict = torch.load(file_path, map_location=device)
+
+    state_dict = {k[7:]: v for k, v in state_dict.items()}
+    model.load_state_dict(state_dict, strict=False)
+    model.cuda()
+    model.eval()
+
+    backbone: TransfuserBackbone = model._model
+
+    return backbone
