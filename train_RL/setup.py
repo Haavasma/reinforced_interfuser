@@ -5,6 +5,6 @@ setup(
     version="0.0.1",
     py_modules=["./"],
     install_requires=[
-        "srunner_gym_env @ git+https://github.com/Haavasma/Carla_scenario_runner_gym_environment.git"
+        "carla_gym_env @ git+https://github.com/Haavasma/Carla_scenario_runner_gym_environment.git"
     ],
 )
