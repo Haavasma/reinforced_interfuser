@@ -1,0 +1,5 @@
+Bootstrap: docker 
+From: carlasim/carla:0.9.13
+
+%post
+    apt-get -y install xdg-user-dirs

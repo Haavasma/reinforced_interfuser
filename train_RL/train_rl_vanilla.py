@@ -108,7 +108,7 @@ def train(config: TrainingConfig) -> None:
             )
         )
 
-    env = DummyVecEnv(environments)
+    env = SubprocVecEnv(environments)
     # run = init_wandb(resume=config["resume"], name=experiment_name)
 
     # wandb_callback = WandbCallback(
