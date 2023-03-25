@@ -1,9 +1,18 @@
-#!/bin/bash
+#!/bin/sh
+#SBATCH --partition=GPUQ
+#SBATCH --account=ie-idi
+#SBATCH --time=00:05:00
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=3
+#SBATCH --mem=24000
+#SBATCH --job-name="Training Baseline carla agent sequential"
+#SBATCH --output=test-baseline.out
+#SBATCH --mail-user=haavasma@stud.ntnu.no
+#SBATCH --mail-type=ALL
+#SBATCH --gres=gpu:P10016:2
 
 # find all available GPU devices
-# gpu_devices=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
-#
-gpu_devices=2
+gpu_devices=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 
 port=2000
 traffic_manager_port=8000
@@ -52,7 +61,16 @@ traffic_manager_ports_string=$(printf "%s" "${traffic_manager_ports[*]}")
 
 unset IFS
 
-# python train_rl_vanilla.py --ports $ports_string \
-#   --traffic-manager-ports $traffic_manager_ports_string \
 
+module purge 
 
+module load Python/3.8.6-GCCcore-10.2.0
+
+export PS1=\$
+
+source /cluster/home/haavasma/haavasma_rl_train
+
+cd /cluster/home/haavasma/master/reinforced_interfuser/train_RL
+
+python train_rl_vanilla.py --ports $ports_string \
+  --traffic-manager-ports $traffic_manager_ports_string \
