@@ -109,13 +109,13 @@ def train(config: TrainingConfig) -> None:
         )
 
     env = SubprocVecEnv(environments)
-    # run = init_wandb(resume=config["resume"], name=experiment_name)
+    run = init_wandb(resume=config["resume"], name=experiment_name)
 
-    # wandb_callback = WandbCallback(
-    #     # gradient_save_freq=10,
-    #     model_save_path=f"./models/{run.id}/",
-    #     model_save_freq=2048,
-    # )
+    wandb_callback = WandbCallback(
+        # gradient_save_freq=10,
+        model_save_path=f"./models/{run.id}/",
+        model_save_freq=2048,
+    )
 
     # eval_callback = EvalCallback(
     #     env,
@@ -160,7 +160,7 @@ def train(config: TrainingConfig) -> None:
     #
     #     return
 
-    rl_model.learn(total_timesteps=50_000, callback=[])
+    rl_model.learn(total_timesteps=50_000, callback=[wandb_callback])
     rl_model.save(f"./models/{run.id}/model")
 
     return
