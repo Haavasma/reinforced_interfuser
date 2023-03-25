@@ -59,7 +59,7 @@ def validate_training_config(config: TrainingConfig) -> None:
 
 
 def train(config: TrainingConfig) -> None:
-    experiment_name = "PPO custom policy"
+    experiment_name = "Scenario runner training baseline agent"
 
     validate_training_config(config)
 
