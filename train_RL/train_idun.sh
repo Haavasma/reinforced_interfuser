@@ -62,15 +62,7 @@ traffic_manager_ports_string=$(printf "%s" "${traffic_manager_ports[*]}")
 unset IFS
 
 
-module purge 
+make train \
+  PORTS=$ports_string \
+  TRAFFIC_MANAGER_PORTS=$traffic_manager_ports_string \
 
-module load Python/3.8.6-GCCcore-10.2.0
-
-export PS1=\$
-
-source /cluster/home/haavasma/haavasma_rl_train
-
-cd /cluster/home/haavasma/master/reinforced_interfuser/train_RL
-
-python train_rl_vanilla.py --ports $ports_string \
-  --traffic-manager-ports $traffic_manager_ports_string \

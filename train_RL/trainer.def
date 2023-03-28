@@ -1,0 +1,53 @@
+Bootstrap: docker 
+From: nvidia/cuda:11.4.1-base-ubuntu18.04
+
+%files
+  /tmp/haavasma_trainer_package /app
+
+%post
+    export PATH=/usr/local/cuda/bin:$PATH
+    export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+    export CUDA_HOME=/usr/local/cuda
+
+    apt-get update && apt-get install -y wget git python3.8 python3-pip python3.8-dev python3.8-venv
+    apt-get install -y build-essential libssl-dev libffi-dev
+    apt-get install -y libxml2-dev libxslt1-dev zlib1g-dev
+    apt-get install -y libjpeg-dev libpng-dev libtiff-dev
+    apt-get install -y libglib2.0-0 libsm6 libxext6 libxrender-dev libpng-dev \
+                       libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev libasound2-dev
+
+
+    # Install libpng
+    apt-get install -y libpng16-16
+
+
+    python3.8 -m venv /venv
+    . /venv/bin/activate
+
+    python -m pip install --upgrade pip
+
+    cd /app
+    python -m pip install -e .
+
+    pip install -r requirements.txt
+    pip install torch==1.13.0 torchvision==0.14.0 --extra-index-url https://download.pytorch.org/whl/cu114 
+
+
+    # BUILD MMCV-FULL WITH CUDA
+    pip install mmcv-full==1.5.2 -f https://download.openmmlab.com/mmcv/dist/cu114/torch1.13.0/index.html
+
+    # TODO: DOWNLOAD AND BUILD MMCV-FULL WITH CUDA FROM SCRATCH
+
+
+    
+%environment
+    export PATH=/usr/local/cuda/bin:$PATH
+    export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+    export CUDA_HOME=/usr/local/cuda
+
+%runscript
+    # Activate the virtual environment
+    . /venv/bin/activate
+
+    # Execute the provided command
+    exec "$@"
