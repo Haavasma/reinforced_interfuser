@@ -1,6 +1,7 @@
 import math
 from dataclasses import dataclass
 from typing import Any, List, Tuple
+from PIL.PngImagePlugin import o8
 
 from episode_manager.agent_handler.models import Location, Transform
 from gym_env.env import WorldState
@@ -26,10 +27,17 @@ def reward_function(state: WorldState) -> Tuple[float, bool]:
     speed_limit = state.ego_vehicle_state.privileged.speed_limit
     speed = state.ego_vehicle_state.speed
 
+    if len(state.ego_vehicle_state.privileged.collision_history.items()) > 0:
+        print("COLLISION")
+        return -1, True
+
+    if state.scenario_state.done:
+        return 1, True
+
     desired_speed = calculate_desired_speed(speed_limit, dist_to_hazard)
     speed_reward = calculate_speed_reward(speed, desired_speed)
     if speed_reward < 0:
-        return -1, True
+        return -1, False
 
     # Angle reward
     ego_vehicle_location = state.ego_vehicle_state.privileged.transform.location
@@ -52,7 +60,7 @@ def reward_function(state: WorldState) -> Tuple[float, bool]:
     )
     angle_reward = _calculate_angle_reward(angle_diff)
     if angle_reward < 0:
-        return -1, True
+        return -1, False
 
     # Distance reward
     distance_reward = _calculate_distance_reward(distance_diff)

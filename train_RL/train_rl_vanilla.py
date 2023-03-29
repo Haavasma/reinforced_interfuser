@@ -1,4 +1,5 @@
 import argparse
+from copy import deepcopy
 from typing import Callable, List, TypedDict
 
 import gym
@@ -6,7 +7,7 @@ from episode_manager import EpisodeManager
 from gym_env.env import (
     CarlaEnvironment,
     CarlaEnvironmentConfiguration,
-    PIDController,
+    SpeedController,
 )
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import EvalCallback
@@ -65,7 +66,7 @@ def train(config: TrainingConfig) -> None:
     validate_training_config(config)
 
     carla_config: CarlaEnvironmentConfiguration = {
-        "speed_goal_actions": [-2.0, -1.0, 0.0, 2.0, 4.0, 5.0],
+        "speed_goal_actions": [-1.0, 0.0, 2.0, 4.0, 5.0],
         "steering_actions": [
             -0.3,
             -0.27,
@@ -92,6 +93,8 @@ def train(config: TrainingConfig) -> None:
         "discrete_actions": True,
         "continuous_speed_range": (0, 0),
         "continuous_steering_range": (0, 0),
+        "towns": ["Town01", "Town02"],
+        "town_change_frequency": 10,
     }
 
     environments: List[Callable[[], gym.Env]] = []
@@ -110,13 +113,13 @@ def train(config: TrainingConfig) -> None:
         )
 
     env = SubprocVecEnv(environments)
-    # run = init_wandb(resume=config["resume"], name=experiment_name)
+    run = init_wandb(resume=config["resume"], name=experiment_name)
 
-    # wandb_callback = WandbCallback(
-    #     # gradient_save_freq=10,
-    #     model_save_path=f"./models/{run.id}/",
-    #     model_save_freq=2048,
-    # )
+    wandb_callback = WandbCallback(
+        # gradient_save_freq=10,
+        model_save_path=f"./models/{run.id}/",
+        model_save_freq=2048,
+    )
 
     # eval_callback = EvalCallback(
     #     env,
@@ -136,7 +139,7 @@ def train(config: TrainingConfig) -> None:
         env,
         verbose=2,
         gamma=0.95,
-        n_steps=2048,
+        n_steps=1024,
         # buffer_size=20_000,
         learning_rate=1e-4,
         # tau=0.005,
@@ -149,7 +152,7 @@ def train(config: TrainingConfig) -> None:
     # rl_model.load(f"./models/{run_id}/best_model/best_model.zip")
     # rl_model = PPO.load(f"./models/{run_id}/best_model/best_model", env=env)
 
-    # rl_model.save(f"./models/{run.id}/model")
+    rl_model.save(f"./models/{run.id}/model")
 
     # obs = env.reset()
     # if eval:
@@ -161,7 +164,7 @@ def train(config: TrainingConfig) -> None:
     #
     #     return
 
-    rl_model.learn(total_timesteps=50_000, callback=[])
+    rl_model.learn(total_timesteps=50_000, callback=[wandb_callback])
     # rl_model.save(f"./models/{run.id}/model")
 
     return
@@ -192,7 +195,7 @@ def make_carla_env(
         episode_manager = EpisodeManager(
             baseline_config(port=port, traffic_manager_port=traffic_manager_port)
         )
-        speed_controller = PIDController()
+        speed_controller = SpeedController()
 
         vision_module = None
 

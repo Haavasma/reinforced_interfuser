@@ -29,7 +29,7 @@ run-carla: build-carla
 build-trainer:
 	if [ ! -f "$(TRAINER_SIF)" ]; then \
 		mkdir /tmp/haavasma_trainer_package; \
-		rsync -av --exclude-from='.gitignore' ./ /tmp/haavasma_trainer_package/; \
+		rsync -av --exclude-from='../.gitignore' ./ /tmp/haavasma_trainer_package/; \
 		apptainer build $(TRAINER_SIF) $(TRAINER_DEF); \
 	fi
 
@@ -38,7 +38,7 @@ train: build-trainer
 	apptainer exec --nv -B ./:/app $(TRAINER_SIF) bash -c "\
 		. /venv/bin/activate && \
     cd /app && \
-    python train_rl_vanilla.py \
+		python train_rl_vanilla.py --ports=$(PORTS) --traffic-manager-ports=$(TRAFFIC_MANAGER_PORTS) \
 "
 
 # Run carla server if it does not exist
