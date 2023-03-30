@@ -14,6 +14,7 @@ models/
 output/
 runs/
 wandb/
+videos/
 /scenario_runner
 /leaderboard
 /carla

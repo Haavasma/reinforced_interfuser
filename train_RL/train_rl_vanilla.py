@@ -9,11 +9,17 @@ from gym_env.env import (
     CarlaEnvironmentConfiguration,
     SpeedController,
 )
+from matplotlib.pyplot import Subplot
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
-from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
+from stable_baselines3.common.vec_env import (
+    DummyVecEnv,
+    SubprocVecEnv,
+    VecMonitor,
+    VecVideoRecorder,
+)
 
 import wandb
 from config import GlobalConfig
@@ -93,7 +99,7 @@ def train(config: TrainingConfig) -> None:
         "discrete_actions": True,
         "continuous_speed_range": (0, 0),
         "continuous_steering_range": (0, 0),
-        "towns": ["Town01", "Town02"],
+        "towns": ["Town01", "Town03"],
         "town_change_frequency": 10,
     }
 
@@ -112,7 +118,6 @@ def train(config: TrainingConfig) -> None:
             )
         )
 
-    env = SubprocVecEnv(environments)
     run = init_wandb(resume=config["resume"], name=experiment_name)
 
     wandb_callback = WandbCallback(
@@ -120,6 +125,9 @@ def train(config: TrainingConfig) -> None:
         model_save_path=f"./models/{run.id}/",
         model_save_freq=2048,
     )
+
+    env = SubprocVecEnv(environments)
+    env = VecMonitor(env)
 
     # eval_callback = EvalCallback(
     #     env,
@@ -139,7 +147,7 @@ def train(config: TrainingConfig) -> None:
         env,
         verbose=2,
         gamma=0.95,
-        n_steps=1024,
+        n_steps=512,
         # buffer_size=20_000,
         learning_rate=1e-4,
         # tau=0.005,
@@ -152,19 +160,7 @@ def train(config: TrainingConfig) -> None:
     # rl_model.load(f"./models/{run_id}/best_model/best_model.zip")
     # rl_model = PPO.load(f"./models/{run_id}/best_model/best_model", env=env)
 
-    rl_model.save(f"./models/{run.id}/model")
-
-    # obs = env.reset()
-    # if eval:
-    #     for _ in range(30000):
-    #         action, _states = rl_model.predict(obs, deterministic=True)
-    #         obs, rewards, dones, info = env.step(action)
-    #         if dones:
-    #             obs = env.reset()
-    #
-    #     return
-
-    rl_model.learn(total_timesteps=50_000, callback=[wandb_callback])
+    rl_model.learn(total_timesteps=200_000, callback=[wandb_callback])
     # rl_model.save(f"./models/{run.id}/model")
 
     return
@@ -218,6 +214,8 @@ def make_carla_env(
         )
 
         env.seed(seed + rank)
+
+        env = Monitor(env)
         return env
 
     set_random_seed(seed)

@@ -52,7 +52,6 @@ def reward_function(state: WorldState) -> Tuple[float, bool]:
         waypoints[(closest_waypoint_index + 1) % len(waypoints)][0].location,
     )
 
-    print("WAYPOINTS: ", wp_0, wp_1)
     angle = _calculate_angle(wp_0, wp_1)
 
     angle_diff = _calculate_radian_difference(
@@ -66,11 +65,6 @@ def reward_function(state: WorldState) -> Tuple[float, bool]:
     distance_reward = _calculate_distance_reward(distance_diff)
     if distance_reward < 0:
         return -1, True
-
-    # Calculate angle between ego vehicle and closest waypoint
-
-    reward = Reward(speed_reward, angle_reward, distance_reward)
-    print("REWARD: ", reward)
 
     return Reward(speed_reward, angle_reward, distance_reward).calculate_reward(), False
 
@@ -100,8 +94,6 @@ def _calculate_angle(point_1: Location, point_2: Location) -> float:
     dx = point_2.x - point_1.x
     dy = point_2.y - point_1.y
 
-    print("DX: ", dx)
-    print("DY: ", dy)
     return math.atan2(dy, dx)
 
 
