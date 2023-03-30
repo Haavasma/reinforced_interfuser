@@ -1,7 +1,7 @@
 #!/bin/sh
-#SBATCH --partition=GPUQ
+#SBATCH --partition=short
 #SBATCH --account=ie-idi
-#SBATCH --time=00:15:00
+#SBATCH --time=00:20:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=5
 #SBATCH --mem=24000
@@ -9,7 +9,7 @@
 #SBATCH --output=test-baseline.out
 #SBATCH --mail-user=haavasma@stud.ntnu.no
 #SBATCH --mail-type=ALL
-#SBATCH --gres=gpu:P100:2
+#SBATCH --gres=gpu:P100
 
 WORKDIR=${SLURM_SUBMIT_DIR}
 cd ${WORKDIR}
@@ -73,17 +73,7 @@ traffic_manager_ports_string=$(printf "%s" "${traffic_manager_ports[*]}")
 unset IFS
 
 
-module purge 
+make train \
+  PORTS=$ports_string \
+  TRAFFIC_MANAGER_PORTS=$traffic_manager_ports_string \
 
-export PS1=\$
-
-source /cluster/home/haavasma/.bashrc 
-
-conda activate rl_train 
-
-cd /cluster/home/haavasma/master/reinforced_interfuser/train_RL
-
-echo $PATH
-
-python train_rl_vanilla.py --ports $ports_string \
-  --traffic-manager-ports $traffic_manager_ports_string \
