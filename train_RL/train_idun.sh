@@ -34,25 +34,29 @@ gpu_devices=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 
 port=2000
 traffic_manager_port=8000
+server_per_gpu=2
 
 for (( i=0; i<$gpu_devices; i++ ))
 do
-  # determine an available TCP port for each GPU device
-  while netstat -atn | grep -q $port; do
-    echo "Port $port is already in use."
-    ((port++))
-  done
+  for (( j=0; j<$server_per_gpu; j++ ))
+  do
+    # determine an available TCP port for each GPU device
+    while netstat -atn | grep -q $port; do
+      echo "Port $port is already in use."
+      ((port++))
+    done
 
-  ports+=($port)
+    ports+=($port)
 
-  while netstat -atn | grep -q $traffic_manager_port; do
+    while netstat -atn | grep -q $traffic_manager_port; do
+      ((traffic_manager_port++))
+    done
+
+    traffic_manager_ports+=($traffic_manager_port)
+
+    ((port+=3))
     ((traffic_manager_port++))
   done
-
-  traffic_manager_ports+=($traffic_manager_port)
-
-  ((port+=3))
-  ((traffic_manager_port++))
 done
 
 echo "TRAFFIC MANAGER PORTS: ${traffic_manager_ports[@]}, SERVER PORTS: ${ports[@]}"
@@ -63,7 +67,7 @@ do
 
   make run-carla \
     CARLA_SERVER_PORT=${ports[$i]} \
-    CARLA_SERVER_GPU_DEVICE=$i \
+    CARLA_SERVER_GPU_DEVICE=$(( i/$server_per_gpu )) \
     &
 
 done
