@@ -1,15 +1,26 @@
 #!/bin/sh
 #SBATCH --partition=GPUQ
 #SBATCH --account=ie-idi
-#SBATCH --time=00:05:00
+#SBATCH --time=00:15:00
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=3
+#SBATCH --ntasks-per-node=5
 #SBATCH --mem=24000
 #SBATCH --job-name="Training Baseline carla agent sequential"
 #SBATCH --output=test-baseline.out
 #SBATCH --mail-user=haavasma@stud.ntnu.no
 #SBATCH --mail-type=ALL
-#SBATCH --gres=gpu:P10016:2
+#SBATCH --gres=gpu:P100:2
+
+WORKDIR=${SLURM_SUBMIT_DIR}
+cd ${WORKDIR}
+echo "we are running from this directory: $SLURM_SUBMIT_DIR"
+echo " the name of the job is: $SLURM_JOB_NAME"
+echo "Th job ID is $SLURM_JOB_ID"
+echo "The job was run on these nodes: $SLURM_JOB_NODELIST"
+echo "Number of nodes: $SLURM_JOB_NUM_NODES"
+echo "We are using $SLURM_CPUS_ON_NODE cores"
+echo "We are using $SLURM_CPUS_ON_NODE cores per node"
+echo "Total of $SLURM_NTASKS cores"
 
 # find all available GPU devices
 gpu_devices=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
@@ -64,13 +75,15 @@ unset IFS
 
 module purge 
 
-module load Python/3.8.6-GCCcore-10.2.0
-
 export PS1=\$
 
-source /cluster/home/haavasma/haavasma_rl_train
+source /cluster/home/haavasma/.bashrc 
+
+conda activate rl_train 
 
 cd /cluster/home/haavasma/master/reinforced_interfuser/train_RL
+
+echo $PATH
 
 python train_rl_vanilla.py --ports $ports_string \
   --traffic-manager-ports $traffic_manager_ports_string \
