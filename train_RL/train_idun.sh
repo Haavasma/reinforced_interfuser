@@ -61,10 +61,10 @@ for (( i=0; i<${#ports[@]}; i++ ))
 do 
   echo "Starting CARLA server on port ${ports[$i]} and GPU device $i"
 
-  #make run-carla \
-  #  CARLA_SERVER_PORT=${ports[$i]} \
-  #  CARLA_SERVER_GPU_DEVICE=$i \
-  #  &
+  make run-carla \
+    CARLA_SERVER_PORT=${ports[$i]} \
+    CARLA_SERVER_GPU_DEVICE=$i \
+    &
 
 done
 
