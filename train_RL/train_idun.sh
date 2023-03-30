@@ -1,7 +1,7 @@
 #!/bin/sh
-#SBATCH --partition=short
+#SBATCH --partition=GPUQ
 #SBATCH --account=ie-idi
-#SBATCH --time=00:20:00
+#SBATCH --time=01:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=5
 #SBATCH --mem=24000
@@ -9,7 +9,7 @@
 #SBATCH --output=test-baseline.out
 #SBATCH --mail-user=haavasma@stud.ntnu.no
 #SBATCH --mail-type=ALL
-#SBATCH --gres=gpu
+#SBATCH --gres=gpu:2
 
 WORKDIR=${SLURM_SUBMIT_DIR}
 
@@ -63,7 +63,7 @@ echo "TRAFFIC MANAGER PORTS: ${traffic_manager_ports[@]}, SERVER PORTS: ${ports[
 
 for (( i=0; i<${#ports[@]}; i++ ))
 do 
-  echo "Starting CARLA server on port ${ports[$i]} and GPU device $i"
+  echo "Starting CARLA server on port ${ports[$i]} and GPU device $(( i/$server_per_gpu ))"
 
   make run-carla \
     CARLA_SERVER_PORT=${ports[$i]} \

@@ -215,7 +215,6 @@ def make_carla_env(
 
         env.seed(seed + rank)
 
-        env = Monitor(env)
         return env
 
     set_random_seed(seed)

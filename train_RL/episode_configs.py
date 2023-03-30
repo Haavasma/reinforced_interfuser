@@ -11,7 +11,7 @@ _transfuser_img_size = (960, 480)
 _fov = 103
 
 TRANSFUSER_CONFIG = EpisodeManagerConfiguration(
-    render_client=True,
+    render_client=False,
     car_config=CarConfiguration(
         "TODO",
         [
