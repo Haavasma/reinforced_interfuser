@@ -9,10 +9,17 @@
 #SBATCH --output=test-baseline.out
 #SBATCH --mail-user=haavasma@stud.ntnu.no
 #SBATCH --mail-type=ALL
-#SBATCH --gres=gpu:P100
+#SBATCH --gres=gpu
 
 WORKDIR=${SLURM_SUBMIT_DIR}
-cd ${WORKDIR}
+
+
+if [ ! -z "$WORKDIR" ]
+then
+	cd $WORKDIR
+fi
+
+echo $WORKDIR
 echo "we are running from this directory: $SLURM_SUBMIT_DIR"
 echo " the name of the job is: $SLURM_JOB_NAME"
 echo "Th job ID is $SLURM_JOB_ID"
@@ -27,9 +34,6 @@ gpu_devices=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 
 port=2000
 traffic_manager_port=8000
-
-ports=()
-traffic_manager_ports=()
 
 for (( i=0; i<$gpu_devices; i++ ))
 do
@@ -57,10 +61,10 @@ for (( i=0; i<${#ports[@]}; i++ ))
 do 
   echo "Starting CARLA server on port ${ports[$i]} and GPU device $i"
 
-  make run-carla \
-    CARLA_SERVER_PORT=${ports[$i]} \
-    CARLA_SERVER_GPU_DEVICE=$i \
-    &
+  #make run-carla \
+  #  CARLA_SERVER_PORT=${ports[$i]} \
+  #  CARLA_SERVER_GPU_DEVICE=$i \
+  #  &
 
 done
 
