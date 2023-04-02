@@ -39,6 +39,8 @@ def reward_function(state: WorldState) -> Tuple[float, bool]:
     if speed_reward < 0:
         return -1, False
 
+    print(f"DESIRED SPEED: {desired_speed}, SPEED: {speed}, REWARD: {speed_reward}")
+
     # Angle reward
     ego_vehicle_location = state.ego_vehicle_state.privileged.transform.location
     waypoints = state.scenario_state.global_plan_world_coord

@@ -52,7 +52,7 @@ def baseline_config(
     port=2000, traffic_manager_port=2001
 ) -> EpisodeManagerConfiguration:
     return EpisodeManagerConfiguration(
-        render_client=True,
+        render_client=False,
         port=port,
         traffic_manager_port=traffic_manager_port,
         car_config=CarConfiguration(

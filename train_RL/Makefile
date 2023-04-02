@@ -13,8 +13,6 @@ CARLA_SERVER_GPU_DEVICE?=0
 PORTS?=2000
 TRAFFIC_MANAGER_PORTS?=8000
 
-install: build-carla install-python
-
 build-carla:
 	if [ ! -f "$(CARLA_SIF)" ]; then \
 		apptainer build $(CARLA_SIF) $(CARLA_DEF); \
@@ -22,8 +20,12 @@ build-carla:
 
 
 run-carla: build-carla
+	while true; do \
 	apptainer exec --nv $(CARLA_SIF) /home/carla/CarlaUE4.sh --world-port=$(CARLA_SERVER_PORT) -RenderOffScreen \
-	-ini:[/Script/Engine.RendererSettings]:r.GraphicsAdapter=$(CARLA_SERVER_GPU_DEVICE)
+	-ini:[/Script/Engine.RendererSettings]:r.GraphicsAdapter=$(CARLA_SERVER_GPU_DEVICE) && break; \
+  sleep 1; \
+	done
+
 
 
 build-trainer:
@@ -41,4 +43,3 @@ train: build-trainer
 		python train_rl_vanilla.py --ports=$(PORTS) --traffic-manager-ports=$(TRAFFIC_MANAGER_PORTS) \
 "
 
-# Run carla server if it does not exist

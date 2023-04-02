@@ -1,6 +1,7 @@
 import argparse
 from copy import deepcopy
-from typing import Callable, List, TypedDict
+import pickle
+from typing import Callable, List, Optional, TypedDict
 
 import gym
 from episode_manager import EpisodeManager
@@ -39,6 +40,7 @@ class TrainingConfig(TypedDict):
     eval: bool
     vision_module: str
     weights: str
+    steps: int
 
 
 def validate_training_config(config: TrainingConfig) -> None:
@@ -118,12 +120,15 @@ def train(config: TrainingConfig) -> None:
             )
         )
 
-    run = init_wandb(resume=config["resume"], name=experiment_name)
+    run = init_wandb(
+        resume=config["resume"],
+        name=experiment_name,
+    )
 
     wandb_callback = WandbCallback(
         # gradient_save_freq=10,
         model_save_path=f"./models/{run.id}/",
-        model_save_freq=2048,
+        model_save_freq=512,
     )
 
     env = SubprocVecEnv(environments)
@@ -142,33 +147,48 @@ def train(config: TrainingConfig) -> None:
 
     policy_kwargs = dict(net_arch=[1024, 512, dict(vf=[256], pi=[256])])
 
-    rl_model = PPO(
-        rl_config["policy_type"],
-        env,
-        verbose=2,
-        gamma=0.95,
-        n_steps=512,
-        # buffer_size=20_000,
-        learning_rate=1e-4,
-        # tau=0.005,
-        # action_noise=NormalActionNoise(np.array([1.0, 0.0]), np.array([0.5, 0.3])),
-        # tensorboard_log=f"runs/{run.id}",
-        policy_kwargs=policy_kwargs,
-        device="cuda",
-    )
+    rl_model: Optional[PPO] = None
+    if config["resume"]:
+        rl_model = PPO.load(f"./models/{run.id}/model", env=env)
+    else:
+        rl_model = PPO(
+            rl_config["policy_type"],
+            env,
+            verbose=2,
+            gamma=0.95,
+            n_steps=1024,
+            # buffer_size=20_000,
+            learning_rate=1e-4,
+            # tau=0.005,
+            # action_noise=NormalActionNoise(np.array([1.0, 0.0]), np.array([0.5, 0.3])),
+            # tensorboard_log=f"runs/{run.id}",
+            policy_kwargs=policy_kwargs,
+            device="cuda",
+        )
 
     # rl_model.load(f"./models/{run_id}/best_model/best_model.zip")
     # rl_model = PPO.load(f"./models/{run_id}/best_model/best_model", env=env)
 
-    rl_model.learn(total_timesteps=200_000, callback=[wandb_callback])
+    run_name = run.id
+    with open("./models/run_name.pkl", "wb") as f:
+        pickle.dump(run_name, f)
+
+    if rl_model is not None:
+        rl_model.learn(total_timesteps=config["steps"], callback=[wandb_callback])
     # rl_model.save(f"./models/{run.id}/model")
 
     return
 
 
-def init_wandb(resume=False, name=None):
-    return wandb.init(
-        resume=resume,
+def init_wandb(resume=False, name=None, previous_run_id: Optional[str] = None):
+    previous_run_id: Optional[str] = None
+    if resume:
+        with open("./models/run_name.pkl", "rb") as f:
+            previous_run_id = pickle.load(f)
+
+    wandb_run = wandb.init(
+        id=previous_run_id,
+        resume="allow" if resume else None,
         config=rl_config,
         name=name,
         monitor_gym=True,
@@ -176,6 +196,13 @@ def init_wandb(resume=False, name=None):
         entity="haavasma",
         sync_tensorboard=True,
     )
+
+    assert wandb_run is wandb.run
+
+    with open("./models/run_name.pkl", "wb") as f:
+        pickle.dump(wandb_run.id, f)
+
+    return wandb_run
 
 
 def make_carla_env(
@@ -250,6 +277,9 @@ if __name__ == "__main__":
         default="",
         help="Vision module (default: None)",
     )
+
+    parser.add_argument("--steps", type=int, default=1_000_000, help="Number of steps")
+
     parser.add_argument("--weights", type=str, default="", help="Path to weights file")
 
     args = parser.parse_args()
@@ -266,5 +296,6 @@ if __name__ == "__main__":
             "vision_module": args.vision_module,
             "weights": args.weights,
             "eval": True,
+            "steps": 1_000_000,
         }
     )
