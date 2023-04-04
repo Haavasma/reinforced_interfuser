@@ -48,3 +48,4 @@ resume: build-trainer
 		. /venv/bin/activate && \
 		cd /app && \
 		python train_rl_vanilla.py --resume --ports=$(PORTS) --traffic-manager-ports=$(TRAFFIC_MANAGER_PORTS) \
+"
