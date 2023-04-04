@@ -21,7 +21,7 @@ build-carla:
 
 run-carla: build-carla
 	while true; do \
-	apptainer exec --nv $(CARLA_SIF) /home/carla/CarlaUE4.sh --world-port=$(CARLA_SERVER_PORT) -RenderOffScreen \
+	apptainer exec --nv $(CARLA_SIF) /home/carla/CarlaUE4.sh --world-port=$(CARLA_SERVER_PORT) -RenderOffScreen -quality-level=Low \
 	-ini:[/Script/Engine.RendererSettings]:r.GraphicsAdapter=$(CARLA_SERVER_GPU_DEVICE) && break; \
   sleep 1; \
 	done
@@ -43,3 +43,8 @@ train: build-trainer
 		python train_rl_vanilla.py --ports=$(PORTS) --traffic-manager-ports=$(TRAFFIC_MANAGER_PORTS) \
 "
 
+resume: build-trainer 
+	apptainer exec --nv -B ./:/app $(TRAINER_SIF) bash -c "\
+		. /venv/bin/activate && \
+		cd /app && \
+		python train_rl_vanilla.py --resume --ports=$(PORTS) --traffic-manager-ports=$(TRAFFIC_MANAGER_PORTS) \
