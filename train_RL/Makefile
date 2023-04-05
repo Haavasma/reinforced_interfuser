@@ -21,7 +21,7 @@ build-carla:
 
 run-carla: build-carla
 	while true; do \
-	apptainer exec --nv $(CARLA_SIF) /home/carla/CarlaUE4.sh --world-port=$(CARLA_SERVER_PORT) -RenderOffScreen -quality-level=Low \
+	apptainer exec --nv $(CARLA_SIF) /home/carla/CarlaUE4.sh --world-port=$(CARLA_SERVER_PORT) -RenderOffScreen \
 	-ini:[/Script/Engine.RendererSettings]:r.GraphicsAdapter=$(CARLA_SERVER_GPU_DEVICE) && break; \
   sleep 1; \
 	done

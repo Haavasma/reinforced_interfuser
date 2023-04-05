@@ -156,7 +156,7 @@ def train(config: TrainingConfig) -> None:
             env,
             verbose=2,
             gamma=0.95,
-            n_steps=1024,
+            n_steps=512,
             # buffer_size=20_000,
             learning_rate=1e-4,
             # tau=0.005,
