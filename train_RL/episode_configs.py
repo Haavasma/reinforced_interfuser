@@ -49,10 +49,10 @@ _baseline_image_size = (120, 120)
 
 
 def baseline_config(
-    port=2000, traffic_manager_port=2001
+    port=2000, traffic_manager_port=8000
 ) -> EpisodeManagerConfiguration:
     return EpisodeManagerConfiguration(
-        render_client=False,
+        render_client=True,
         port=port,
         traffic_manager_port=traffic_manager_port,
         car_config=CarConfiguration(

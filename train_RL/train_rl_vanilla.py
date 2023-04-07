@@ -8,7 +8,7 @@ from episode_manager import EpisodeManager
 from gym_env.env import (
     CarlaEnvironment,
     CarlaEnvironmentConfiguration,
-    SpeedController,
+    TestSpeedController,
 )
 from matplotlib.pyplot import Subplot
 from stable_baselines3 import PPO
@@ -74,7 +74,7 @@ def train(config: TrainingConfig) -> None:
     validate_training_config(config)
 
     carla_config: CarlaEnvironmentConfiguration = {
-        "speed_goal_actions": [-1.0, 0.0, 2.0, 4.0, 5.0],
+        "speed_goal_actions": [-1.0, 0.0, 2.0, 4.0, 5.0, 8.0],
         "steering_actions": [
             -0.3,
             -0.27,
@@ -101,7 +101,7 @@ def train(config: TrainingConfig) -> None:
         "discrete_actions": True,
         "continuous_speed_range": (0, 0),
         "continuous_steering_range": (0, 0),
-        "towns": ["Town01", "Town03"],
+        "towns": ["Town01"],
         "town_change_frequency": 10,
     }
 
@@ -156,7 +156,7 @@ def train(config: TrainingConfig) -> None:
             env,
             verbose=2,
             gamma=0.95,
-            n_steps=512,
+            n_steps=1024,
             # buffer_size=20_000,
             learning_rate=1e-4,
             # tau=0.005,
@@ -218,7 +218,7 @@ def make_carla_env(
         episode_manager = EpisodeManager(
             baseline_config(port=port, traffic_manager_port=traffic_manager_port)
         )
-        speed_controller = SpeedController()
+        speed_controller = TestSpeedController()
 
         vision_module = None
 

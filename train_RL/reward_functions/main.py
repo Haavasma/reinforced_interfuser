@@ -29,17 +29,21 @@ def reward_function(state: WorldState) -> Tuple[float, bool]:
 
     if len(state.ego_vehicle_state.privileged.collision_history.items()) > 0:
         print("COLLISION")
-        return -1, True
+        return -100, True
 
     if state.scenario_state.done:
         return 1, True
 
     desired_speed = calculate_desired_speed(speed_limit, dist_to_hazard)
     speed_reward = calculate_speed_reward(speed, desired_speed)
-    if speed_reward < 0:
-        return -1, False
 
-    print(f"DESIRED SPEED: {desired_speed}, SPEED: {speed}, REWARD: {speed_reward}")
+    # print("\n------------------------------------")
+    # print(f"DESIRED SPEED: {desired_speed}")
+    # print(f"SPEED: {speed}")
+    # print(f"REWARD: {speed_reward}")
+    # print("------------------------------------\n")
+    if speed_reward <= 0:
+        return speed_reward, False
 
     # Angle reward
     ego_vehicle_location = state.ego_vehicle_state.privileged.transform.location
@@ -68,7 +72,9 @@ def reward_function(state: WorldState) -> Tuple[float, bool]:
     if distance_reward < 0:
         return -1, True
 
-    return Reward(speed_reward, angle_reward, distance_reward).calculate_reward(), False
+    result = Reward(speed_reward, angle_reward, distance_reward).calculate_reward()
+
+    return result, False
 
 
 def _calculate_distance_reward(distance: float) -> float:
