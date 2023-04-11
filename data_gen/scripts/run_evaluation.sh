@@ -14,17 +14,17 @@ export DATAGEN_ROOT=data_gen
 export LEADERBOARD_ROOT=$DATAGEN_ROOT/leaderboard
 
 export CHALLENGE_TRACK_CODENAME=SENSORS
-export PORT=2003 # same as the carla server port
-export TM_PORT=2501 # port for traffic manager, required when spawning multiple servers/clients
+export PORT=2000 # same as the carla server port
+export TM_PORT=2500 # port for traffic manager, required when spawning multiple servers/clients
 export DEBUG_CHALLENGE=0
 export REPETITIONS=1 # multiple evaluation runs
-export ROUTES=routes/routes_training_town06.xml
+export ROUTES=routes/routes_test_town02.xml
 export TEAM_AGENT=$DATAGEN_ROOT/team_code/auto_pilot.py # agent
 export TEAM_CONFIG=yamls/weather-0.yaml
 export CHECKPOINT_ENDPOINT=$DATAGEN_ROOT/results/sample_result.json # results file
 export SCENARIOS=routes/all_towns_traffic_scenarios.json
-export SAVE_PATH=data/training # path for saving episodes while evaluating
-export RESUME=True
+export SAVE_PATH=data/test # path for saving episodes while evaluating
+# export RESUME=True
 
 python3 ${LEADERBOARD_ROOT}/leaderboard_evaluator.py \
 --scenarios=${SCENARIOS}  \
