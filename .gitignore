@@ -12,7 +12,6 @@ test-baseline.out
 
 gym_environment/
 
-models/
 output/
 runs/
 wandb/
@@ -180,4 +179,4 @@ cython_debug/
 
 results/
 model_ckpt/
-data/
+expert_data/

@@ -23,7 +23,7 @@ export TEAM_AGENT=$DATAGEN_ROOT/team_code/auto_pilot.py # agent
 export TEAM_CONFIG=yamls/weather-0.yaml
 export CHECKPOINT_ENDPOINT=$DATAGEN_ROOT/results/sample_result.json # results file
 export SCENARIOS=routes/all_towns_traffic_scenarios.json
-export SAVE_PATH=data/test # path for saving episodes while evaluating
+export SAVE_PATH=expert_data/ # path for saving episodes while evaluating
 # export RESUME=True
 
 python3 ${LEADERBOARD_ROOT}/leaderboard_evaluator.py \
