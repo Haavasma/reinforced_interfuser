@@ -102,6 +102,7 @@ def train(config: TrainingConfig) -> None:
         "continuous_speed_range": (0, 0),
         "continuous_steering_range": (0, 0),
         "towns": ["Town01"],
+        "filtered_ids": {"3", "4", "9", "13"},
         "town_change_frequency": 10,
     }
 
