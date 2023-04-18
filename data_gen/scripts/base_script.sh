@@ -1,11 +1,13 @@
 #!/bin/bash
-export DATAGEN_ROOT=data_gen
+export DATAGEN_ROOT="./"
 
 export LEADERBOARD_ROOT=$DATAGEN_ROOT/leaderboard
 export TEAM_AGENT=$DATAGEN_ROOT/team_code/auto_pilot.py # agent
 
 export CHALLENGE_TRACK_CODENAME=SENSORS
 export RESUME=True
+export REPETITIONS=1
+export DEBUG_CHALLENGE=0
 
 
 python3 ${LEADERBOARD_ROOT}/leaderboard_evaluator.py \
