@@ -12,7 +12,7 @@ export RANK="0"
     --scale 0.9 1.1 --saver-decreasing --clip-grad 10 --freeze-num -1 \
     --with-backbone-lr --backbone-lr 0.0002 \
     --multi-view --with-lidar --multi-view-input-size 3 128 128 \
-    --output './train_encoder/output' \
+    --output './output' \
     --log-wandb \
     --experiment interfuser_baseline \
     --pretrained

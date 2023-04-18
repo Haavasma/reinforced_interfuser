@@ -11,6 +11,8 @@ ROUTE_FOLDER = Path("../routes").absolute().resolve()
 DATA_FOLDER = Path("../expert_data").absolute().resolve()
 DATA_GEN_PATH = Path("./").absolute().resolve()
 
+CHECKPOINT_FOLDER = DATA_GEN_PATH / "checkpoints"
+
 BASHS_DIR = Path("scripts/bashs").absolute().resolve()
 
 SCENARIOS_FILE = ROUTE_FOLDER / "all_towns_traffic_scenarios.json"
@@ -31,18 +33,22 @@ def main():
     traffic_seed = 2000
 
     configs = []
+
+    if not os.path.exists(CHECKPOINT_FOLDER):
+        os.mkdir(CHECKPOINT_FOLDER)
+
     for i in range(14):
-        configs.append("weather-%d.yaml" % i)
+        new_config = f"weather-{i}.yaml"
+        configs.append(new_config)
+        os.mkdir(f"{CHECKPOINT_FOLDER}/weather-%d" % i)
 
     if os.path.exists(BASHS_DIR):
         shutil.rmtree(BASHS_DIR)
     os.mkdir(BASHS_DIR)
 
     for i in range(14):
-        print("MAKIN DIR: ", f"{BASHS_DIR}/weather-%d" % i)
         os.mkdir(f"{BASHS_DIR}/weather-%d" % i)
         for route in routes:
-            print("Generating script for route: ", route)
             ip, port, tm_port = ip_ports[i]
             script = generate_script(
                 ip,
@@ -61,6 +67,7 @@ def main():
             )
             for line in script:
                 fw.write(line)
+    print(f"Finished writing bashes to {BASHS_DIR}.")
 
 
 def generate_script(
@@ -77,7 +84,7 @@ def generate_script(
     lines.append("export TEAM_CONFIG=yamls/%s\n" % config_path)
     lines.append("export SAVE_PATH=%s\n" % DATA_FOLDER)
     lines.append(
-        "export CHECKPOINT_ENDPOINT=%s/results/%s/results/%s.json\n"
+        "export CHECKPOINT_ENDPOINT=%s/checkpoints/%s/%s.json\n"
         % (
             DATA_GEN_PATH,
             config_path.split(".")[0],
