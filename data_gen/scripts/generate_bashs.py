@@ -40,7 +40,10 @@ def main():
     for i in range(14):
         new_config = f"weather-{i}.yaml"
         configs.append(new_config)
-        os.mkdir(f"{CHECKPOINT_FOLDER}/weather-%d" % i)
+
+        checkpoint_path = f"{CHECKPOINT_FOLDER}/weather-{i}"
+        if not os.path.exists(checkpoint_path):
+            os.mkdir(checkpoint_path)
 
     if os.path.exists(BASHS_DIR):
         shutil.rmtree(BASHS_DIR)
@@ -88,7 +91,7 @@ def generate_script(
         % (
             DATA_GEN_PATH,
             config_path.split(".")[0],
-            route.split("/")[1].split(".")[0],
+            route.split("/")[-1].split(".")[0],
         )
     )
     lines.append("\n")
