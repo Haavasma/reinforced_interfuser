@@ -361,6 +361,7 @@ class TransformerEncoderLayer(nn.Module):
         src2 = self.norm2(src)
         src2 = self.linear2(self.dropout(self.activation(self.linear1(src2))))
         src = src + self.dropout2(src2)
+
         return src
 
     def forward(
@@ -710,8 +711,11 @@ class Interfuser(nn.Module):
         self.global_embed = nn.Parameter(torch.zeros(1, embed_dim, 5))
         self.view_embed = nn.Parameter(torch.zeros(1, embed_dim, 5, 1))
 
-        self.query_pos_embed = nn.Parameter(torch.zeros(1, embed_dim, 1))
-        self.query_embed = nn.Parameter(torch.zeros(400 + 1, 1, embed_dim))
+        self.query_pos_embed = nn.Parameter(torch.zeros(1, embed_dim, 2))
+        self.query_embed = nn.Parameter(torch.zeros(400 + 2, 1, embed_dim))
+
+        # Find out where the CLASS token should be implemented, to mirror
+        # how text classification is done.
 
         self.junction_pred_head = nn.Linear(embed_dim, 2)
         self.traffic_light_pred_head = nn.Linear(embed_dim, 2)
@@ -927,8 +931,6 @@ class Interfuser(nn.Module):
         bs = front_image.shape[0]
         memory = self.forward_encoding(x)
 
-        print("MEMORY SHAPE: ", memory.size())
-
         if self.end2end:
             tgt = self.query_pos_embed.repeat(bs, 1, 1)
         else:
@@ -938,14 +940,15 @@ class Interfuser(nn.Module):
             tgt = tgt.flatten(2)
             tgt = torch.cat([tgt, self.query_pos_embed.repeat(bs, 1, 1)], 2)
         tgt = tgt.permute(2, 0, 1)
-
         hs = self.decoder(self.query_embed.repeat(1, bs, 1), memory, query_pos=tgt)[0]
 
         hs = hs.permute(1, 0, 2)  # Batchsize ,  N, C
+
         traffic_feature = hs[:, :400]
         is_junction_feature = hs[:, 400]
         traffic_light_state_feature = hs[:, 400]
         stop_sign_feature = hs[:, 400]
+        target_feature = hs[:, 401]
 
         is_junction = self.junction_pred_head(is_junction_feature)
         traffic_light_state = self.traffic_light_pred_head(traffic_light_state_feature)
@@ -962,6 +965,7 @@ class Interfuser(nn.Module):
             traffic_light_state,
             stop_sign,
             traffic_feature,
+            target_feature,
         )
 
 
@@ -970,7 +974,7 @@ def interfuser_baseline(**kwargs):
     model = Interfuser(
         enc_depth=3,
         dec_depth=3,
-        embed_dim=64,
+        embed_dim=256,
         rgb_backbone_name="r18",
         lidar_backbone_name="r18",
         use_different_backbone=True,

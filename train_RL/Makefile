@@ -1,5 +1,5 @@
 # Create carla sif file if it does not exist
-CARLA_VERSION=0.9.14
+CARLA_VERSION=0.9.13
 CARLA_SIF = "carla-$(CARLA_VERSION).sif"
 CARLA_DEF = "./carla_server.def"
 
