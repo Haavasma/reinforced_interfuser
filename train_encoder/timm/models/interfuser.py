@@ -250,6 +250,90 @@ class MultiPath_Generator(nn.Module):
         return x
 
 
+class LinearWaypointsPredictor(nn.Module):
+    def __init__(self, input_dim, cumsum=True):
+        super().__init__()
+        self.cumsum = cumsum
+        self.rank_embed = nn.Parameter(torch.zeros(1, 10, input_dim))
+        self.head_fc1_list = nn.ModuleList([nn.Linear(input_dim, 64) for _ in range(6)])
+        self.head_relu = nn.ReLU(inplace=True)
+        self.head_fc2_list = nn.ModuleList([nn.Linear(64, 2) for _ in range(6)])
+
+    def forward(self, x, measurements):
+        # input shape: n 10 embed_dim
+        bs, n, dim = x.shape
+        x = x + self.rank_embed
+        x = x.reshape(-1, dim)
+
+        mask = measurements[:, :6]
+        mask = torch.unsqueeze(mask, -1).repeat(n, 1, 2)
+
+        rs = []
+        for i in range(6):
+            res = self.head_fc1_list[i](x)
+            res = self.head_relu(res)
+            res = self.head_fc2_list[i](res)
+            rs.append(res)
+        rs = torch.stack(rs, 1)
+        x = torch.sum(rs * mask, dim=1)
+
+        x = x.view(bs, n, 2)
+        if self.cumsum:
+            x = torch.cumsum(x, 1)
+        return x
+
+
+class GRUWaypointsPredictorWithCommand(nn.Module):
+    def __init__(self, input_dim, waypoints=10):
+        super().__init__()
+        # self.gru = torch.nn.GRUCell(input_size=input_dim, hidden_size=64)
+        self.grus = nn.ModuleList(
+            [
+                torch.nn.GRU(input_size=input_dim, hidden_size=64, batch_first=True)
+                for _ in range(6)
+            ]
+        )
+        self.encoder = nn.Linear(2, 64)
+        self.decoders = nn.ModuleList([nn.Linear(64, 2) for _ in range(6)])
+        self.waypoints = waypoints
+
+    def forward(self, x, target_point, measurements):
+        bs, n, dim = x.shape
+        mask = measurements[:, :6, None, None]
+        mask = mask.repeat(1, 1, self.waypoints, 2)
+
+        z = self.encoder(target_point).unsqueeze(0)
+        outputs = []
+        for i in range(6):
+            output, _ = self.grus[i](x, z)
+            output = output.reshape(bs * self.waypoints, -1)
+            output = self.decoders[i](output).reshape(bs, self.waypoints, 2)
+            output = torch.cumsum(output, 1)
+            outputs.append(output)
+        outputs = torch.stack(outputs, 1)
+        output = torch.sum(outputs * mask, dim=1)
+        return output
+
+
+class GRUWaypointsPredictor(nn.Module):
+    def __init__(self, input_dim, waypoints=10):
+        super().__init__()
+        # self.gru = torch.nn.GRUCell(input_size=input_dim, hidden_size=64)
+        self.gru = torch.nn.GRU(input_size=input_dim, hidden_size=64, batch_first=True)
+        self.encoder = nn.Linear(2, 64)
+        self.decoder = nn.Linear(64, 2)
+        self.waypoints = waypoints
+
+    def forward(self, x, target_point):
+        bs = x.shape[0]
+        z = self.encoder(target_point).unsqueeze(0)
+        output, _ = self.gru(x, z)
+        output = output.reshape(bs * self.waypoints, -1)
+        output = self.decoder(output).reshape(bs, self.waypoints, 2)
+        output = torch.cumsum(output, 1)
+        return output
+
+
 class TransformerDecoder(nn.Module):
     def __init__(self, decoder_layer, num_layers, norm=None, return_intermediate=False):
         super().__init__()
@@ -562,6 +646,7 @@ class Interfuser(nn.Module):
         with_right_left_sensors=True,
         with_center_sensor=True,
         traffic_pred_head_type="det",
+        waypoints_pred_head="heatmap",
         reverse_pos=True,
         use_different_backbone=False,
         use_view_embed=True,
@@ -576,6 +661,7 @@ class Interfuser(nn.Module):
         act_layer = act_layer or nn.GELU
 
         self.reverse_pos = reverse_pos
+        self.waypoints_pred_head = waypoints_pred_head
         self.with_lidar = with_lidar
         self.with_right_left_sensors = with_right_left_sensors
         self.with_center_sensor = with_center_sensor
@@ -711,11 +797,12 @@ class Interfuser(nn.Module):
         self.global_embed = nn.Parameter(torch.zeros(1, embed_dim, 5))
         self.view_embed = nn.Parameter(torch.zeros(1, embed_dim, 5, 1))
 
-        self.query_pos_embed = nn.Parameter(torch.zeros(1, embed_dim, 2))
-        self.query_embed = nn.Parameter(torch.zeros(400 + 2, 1, embed_dim))
+        self.query_pos_embed = nn.Parameter(torch.zeros(1, embed_dim, 12))
+        self.query_embed = nn.Parameter(torch.zeros(400 + 12, 1, embed_dim))
 
         # Find out where the CLASS token should be implemented, to mirror
         # how text classification is done.
+        self.waypoints_generator = GRUWaypointsPredictor(embed_dim)
 
         self.junction_pred_head = nn.Linear(embed_dim, 2)
         self.traffic_light_pred_head = nn.Linear(embed_dim, 2)
@@ -927,6 +1014,7 @@ class Interfuser(nn.Module):
     def forward(self, x):
         front_image = x["rgb"]
         measurements = x["measurements"]
+        target_point = x["target_point"]
 
         bs = front_image.shape[0]
         memory = self.forward_encoding(x)
@@ -948,7 +1036,10 @@ class Interfuser(nn.Module):
         is_junction_feature = hs[:, 400]
         traffic_light_state_feature = hs[:, 400]
         stop_sign_feature = hs[:, 400]
-        target_feature = hs[:, 401]
+        waypoints_feature = hs[:, 401:411]
+        target_feature = hs[:, 411]
+
+        waypoints = self.waypoints_generator(waypoints_feature, target_point)
 
         is_junction = self.junction_pred_head(is_junction_feature)
         traffic_light_state = self.traffic_light_pred_head(traffic_light_state_feature)
@@ -964,6 +1055,7 @@ class Interfuser(nn.Module):
             is_junction,
             traffic_light_state,
             stop_sign,
+            waypoints,
             traffic_feature,
             target_feature,
         )

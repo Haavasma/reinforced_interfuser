@@ -22,6 +22,7 @@ def lidar_to_histogram_features(lidar, crop=256):
     """
     Convert LiDAR point cloud into 2-bin histogram over 256x256 grid
     """
+    # Pick random lidar point
 
     def splat_points(point_cloud):
         # 256 x 256 grid
@@ -29,15 +30,21 @@ def lidar_to_histogram_features(lidar, crop=256):
         hist_max_per_pixel = 5
         x_meters_max = 14
         y_meters_max = 28
+
         xbins = np.linspace(
             -2 * x_meters_max,
             2 * x_meters_max + 1,
             2 * x_meters_max * pixels_per_meter + 1,
         )
+
+        # pick random point
+
         ybins = np.linspace(-y_meters_max, 0, y_meters_max * pixels_per_meter + 1)
         hist = np.histogramdd(point_cloud[..., :2], bins=(xbins, ybins))[0]
+
         hist[hist > hist_max_per_pixel] = hist_max_per_pixel
         overhead_splat = hist / hist_max_per_pixel
+
         return overhead_splat
 
     below = lidar[lidar[..., 2] <= -2.0]
@@ -46,7 +53,10 @@ def lidar_to_histogram_features(lidar, crop=256):
     above_features = splat_points(above)
     total_features = below_features + above_features
     features = np.stack([below_features, above_features, total_features], axis=-1)
+    features = np.rot90(features, k=3)
+
     features = np.transpose(features, (2, 0, 1)).astype(np.float32)
+
     return features
 
 
@@ -239,7 +249,6 @@ class CarlaMVDetDataset(BaseIODataset):
             lidar_unprocessed = self._load_npy(
                 os.path.join(route_dir, "lidar", "%04d.npy" % frame_id)
             )[..., :3]
-            lidar_unprocessed[:, 1] *= -1
             full_lidar = transform_2d_points(
                 lidar_unprocessed,
                 np.pi / 2 - measurements["theta"],

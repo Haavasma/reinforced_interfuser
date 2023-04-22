@@ -1,6 +1,6 @@
 from pathlib import Path
 
-DATA_DIR = Path("expert_data/train")
+DATA_DIR = Path("../expert_data").absolute().resolve()
 DATASET_INDEX_PATH = DATA_DIR / "dataset_index.txt"
 
 
