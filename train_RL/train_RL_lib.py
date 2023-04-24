@@ -97,6 +97,9 @@ def train(config: TrainingConfig) -> None:
             num_rollout_workers=len(config["ports"]),
             num_envs_per_worker=1,
             recreate_failed_workers=True,
+            restart_failed_sub_environments=False,
+            worker_health_probe_timeout_s=60,
+            worker_restore_timeout_s=60,
         )
         .resources(num_gpus=1)
         .environment(name)
