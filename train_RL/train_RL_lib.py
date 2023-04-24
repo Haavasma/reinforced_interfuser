@@ -101,7 +101,7 @@ def train(config: TrainingConfig) -> None:
             worker_health_probe_timeout_s=60,
             worker_restore_timeout_s=60,
         )
-        .resources(num_gpus=1)
+        .resources(num_gpus=len(set(config["gpus"])))
         .environment(name)
         .training()
         .framework("torch")
