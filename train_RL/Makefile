@@ -40,12 +40,12 @@ train: build-trainer
 	apptainer exec --nv -B ./:/app $(TRAINER_SIF) bash -c "\
 		. /venv/bin/activate && \
     cd /app && \
-		python train_rl_vanilla.py --ports=$(PORTS) --traffic-manager-ports=$(TRAFFIC_MANAGER_PORTS) \
+		python train_RL_lib.py --ports=$(PORTS) --traffic-manager-ports=$(TRAFFIC_MANAGER_PORTS) \
 "
 
 resume: build-trainer 
 	apptainer exec --nv -B ./:/app $(TRAINER_SIF) bash -c "\
 		. /venv/bin/activate && \
 		cd /app && \
-		python train_rl_vanilla.py --resume --ports=$(PORTS) --traffic-manager-ports=$(TRAFFIC_MANAGER_PORTS) \
+		python train_RL_lib.py --resume --ports=$(PORTS) --traffic-manager-ports=$(TRAFFIC_MANAGER_PORTS) \
 "

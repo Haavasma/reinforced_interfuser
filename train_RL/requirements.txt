@@ -6,7 +6,7 @@ opencv_python==4.2.0.32
 Pillow==9.4.0
 scikit_image==0.19.2
 setuptools==61.2.0
-stable_baselines3==1.7.0
+ray==2.3.1
 timm==0.6.12
 tqdm==4.64.0
 ujson==5.1.0
