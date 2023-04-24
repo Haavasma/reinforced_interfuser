@@ -74,8 +74,15 @@ def train(config: TrainingConfig) -> None:
     validate_training_config(config)
 
     carla_config: CarlaEnvironmentConfiguration = {
-        "speed_goal_actions": [-1.0, 0.0, 2.0, 4.0, 5.0, 8.0],
+        "speed_goal_actions": [0.0, 4.0, 6.0],
         "steering_actions": [
+            -0.51,
+            -0.48,
+            -0.45,
+            -0.42,
+            -0.39,
+            -0.36,
+            -0.33,
             -0.3,
             -0.27,
             -0.24,
@@ -97,12 +104,18 @@ def train(config: TrainingConfig) -> None:
             0.24,
             0.27,
             0.3,
+            0.33,
+            0.36,
+            0.39,
+            0.42,
+            0.45,
+            0.48,
+            0.51,
         ],
-        "discrete_actions": True,
-        "continuous_speed_range": (0, 0),
-        "continuous_steering_range": (0, 0),
+        "discrete_actions": False,
+        "continuous_speed_range": (0.0, 6.0),
+        "continuous_steering_range": (-0.3, 0.3),
         "towns": ["Town01"],
-        "filtered_ids": {"3", "4", "9", "13"},
         "town_change_frequency": 10,
     }
 
@@ -175,7 +188,7 @@ def train(config: TrainingConfig) -> None:
         pickle.dump(run_name, f)
 
     if rl_model is not None:
-        rl_model.learn(total_timesteps=config["steps"], callback=[wandb_callback])
+        rl_model.learn(total_timesteps=config["steps"], callback=[])
     # rl_model.save(f"./models/{run.id}/model")
 
     return

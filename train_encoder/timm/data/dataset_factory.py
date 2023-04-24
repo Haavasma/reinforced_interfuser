@@ -3,7 +3,7 @@ import os
 
 from .dataset import IterableImageDataset, ImageDataset
 from .carla_dataset import CarlaMVDetDataset
-from typing import Tuple
+from typing import List, Optional, Tuple
 from sklearn.model_selection import train_test_split
 
 
@@ -51,9 +51,15 @@ def create_dataset(
 
 
 def create_carla_dataset(
-    root, eval_size=0.2, **kwargs
+    root,
+    eval_size=0.2,
+    steer_actions: Optional[List[float]] = None,
+    speed_actions: Optional[List[float]] = None,
+    **kwargs
 ) -> Tuple[CarlaMVDetDataset, CarlaMVDetDataset]:
-    train_ds = CarlaMVDetDataset(root, "det", **kwargs)
+    train_ds = CarlaMVDetDataset(
+        root, "det", steer_actions=steer_actions, speed_actions=speed_actions, **kwargs
+    )
     route_frames = train_ds.route_frames
     eval_ds = deepcopy(train_ds)
     train, eval = train_test_split(route_frames, test_size=eval_size, random_state=42)

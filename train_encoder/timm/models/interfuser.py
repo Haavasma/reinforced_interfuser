@@ -65,6 +65,62 @@ class HybridEmbed(nn.Module):
         return x, global_x
 
 
+class LinearActionPredictor(nn.Module):
+    def __init__(self, input_dim: int, hidden_size=256, n_actions=93):
+        super().__init__()
+        self.n_actions = n_actions
+        self.target_encoder = nn.Sequential(nn.Linear(2, hidden_size), nn.ReLU())
+        self.encode = nn.Sequential(nn.Linear(input_dim, hidden_size), nn.ReLU())
+        self.hidden_layer = nn.Sequential(
+            nn.Linear(hidden_size * 2, hidden_size * 2), nn.ReLU()
+        )
+        self.action_head = nn.Linear(hidden_size * 2, n_actions)
+
+    def forward(self, x, target_point, depth=3):
+        target = self.target_encoder(target_point)
+        output = self.encode(x)
+
+        output = torch.cat([output, target], dim=1)
+        for _ in range(depth):
+            output = self.hidden_layer(output)
+
+        output = self.action_head(output)
+
+        action_probabilities = F.softmax(output)
+
+        return action_probabilities
+
+
+# Predicts wanted speed mean and variance action probability distribution
+class SquashedGaussianModel(nn.Module):
+    def __init__(self, input_dim: int, hidden_size=64):
+        super().__init__()
+
+        self.target_encoder = nn.Linear(2, hidden_size)
+
+        self.encode = nn.Linear(input_dim, hidden_size)
+        self.speed_mean = nn.Linear(hidden_size * 2, 1)
+        self.speed_variance = nn.Linear(hidden_size * 2, 1)
+        self.steering_mean = nn.Linear(hidden_size * 2, 1)
+        self.steering_variance = nn.Linear(hidden_size * 2, 1)
+
+        return
+
+    def forward(self, x, target_point):
+        target = self.target_encoder(target_point)
+
+        output = self.encode(x)
+        output = torch.cat([output, target], dim=1)
+
+        speed_mean = torch.tanh(self.speed_mean(output))
+        speed_variance = F.softplus(self.speed_variance(output))
+
+        steering_mean = torch.tanh(self.steering_mean(output))
+        steering_variance = F.softplus(self.steering_variance(output))
+
+        return speed_mean, speed_variance, steering_mean, steering_variance
+
+
 class PositionEmbeddingSine(nn.Module):
     """
     This is a more standard version of the position embedding, very similar to the one
@@ -625,6 +681,8 @@ class Interfuser(nn.Module):
         self,
         img_size=224,
         multi_view_img_size=112,
+        discrete_actions=True,
+        n_actions=217,
         patch_size=16,
         in_chans=3,
         embed_dim=768,
@@ -797,12 +855,16 @@ class Interfuser(nn.Module):
         self.global_embed = nn.Parameter(torch.zeros(1, embed_dim, 5))
         self.view_embed = nn.Parameter(torch.zeros(1, embed_dim, 5, 1))
 
-        self.query_pos_embed = nn.Parameter(torch.zeros(1, embed_dim, 12))
-        self.query_embed = nn.Parameter(torch.zeros(400 + 12, 1, embed_dim))
+        self.query_pos_embed = nn.Parameter(torch.zeros(1, embed_dim, 2))
+        self.query_embed = nn.Parameter(torch.zeros(400 + 2, 1, embed_dim))
 
         # Find out where the CLASS token should be implemented, to mirror
         # how text classification is done.
-        self.waypoints_generator = GRUWaypointsPredictor(embed_dim)
+        # self.waypoints_generator = GRUWaypointsPredictor(embed_dim)
+
+        # self.action_pred_head = SquashedGaussianModel(embed_dim, 64)
+
+        self.action_pred_head = LinearActionPredictor(embed_dim, n_actions=n_actions)
 
         self.junction_pred_head = nn.Linear(embed_dim, 2)
         self.traffic_light_pred_head = nn.Linear(embed_dim, 2)
@@ -1036,10 +1098,12 @@ class Interfuser(nn.Module):
         is_junction_feature = hs[:, 400]
         traffic_light_state_feature = hs[:, 400]
         stop_sign_feature = hs[:, 400]
-        waypoints_feature = hs[:, 401:411]
-        target_feature = hs[:, 411]
+        # waypoints_feature = hs[:, 401:411]
+        action_feature = hs[:, 401]
 
-        waypoints = self.waypoints_generator(waypoints_feature, target_point)
+        # waypoints = self.waypoints_generator(waypoints_feature, target_point)
+
+        action_probs = self.action_pred_head(action_feature, target_point)
 
         is_junction = self.junction_pred_head(is_junction_feature)
         traffic_light_state = self.traffic_light_pred_head(traffic_light_state_feature)
@@ -1055,9 +1119,10 @@ class Interfuser(nn.Module):
             is_junction,
             traffic_light_state,
             stop_sign,
-            waypoints,
+            # waypoints,
+            action_probs,
             traffic_feature,
-            target_feature,
+            action_feature,
         )
 
 
@@ -1070,5 +1135,6 @@ def interfuser_baseline(**kwargs):
         rgb_backbone_name="r18",
         lidar_backbone_name="r18",
         use_different_backbone=True,
+        n_actions=3 * 31,
     )
     return model

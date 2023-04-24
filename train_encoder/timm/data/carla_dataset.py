@@ -1,3 +1,4 @@
+from bisect import bisect, bisect_left
 import os
 import copy
 import re
@@ -7,6 +8,7 @@ import json
 import numpy as np
 import torch
 import torch.utils.data as data
+from typing import Optional, List
 from torchvision import transforms
 from PIL import Image
 from .base_io_dataset import BaseIODataset
@@ -107,6 +109,8 @@ class CarlaMVDetDataset(BaseIODataset):
         self,
         root,
         head="det",
+        steer_actions: Optional[List[float]] = None,
+        speed_actions: Optional[List[float]] = None,
         input_rgb_size=224,
         input_lidar_size=224,
         rgb_transform=None,
@@ -124,6 +128,19 @@ class CarlaMVDetDataset(BaseIODataset):
         self.root = root
 
         self.head = head
+
+        if steer_actions is None:
+            self.steer_actions = np.linspace(-1.0, 1.0, 31)
+        else:
+            self.steer_actions = np.array(steer_actions)
+
+        if speed_actions is None:
+            self.speed_actions = np.array([0.0, 4.5, 6.0])
+        else:
+            self.speed_actions = np.array(speed_actions)
+
+        self.n_actions = self.steer_actions.shape[0] * self.speed_actions.shape[0]
+
         self.input_lidar_size = input_lidar_size
         self.input_rgb_size = input_rgb_size
         self.rgb_transform = rgb_transform
@@ -384,6 +401,10 @@ class CarlaMVDetDataset(BaseIODataset):
         img_traj = img_traj[:100, 40:140, None]
         img_traj = transforms.ToTensor()(img_traj)
 
+        steer = measurements["steer"]
+        speed = measurements["target_speed"]
+        action = self._get_action(steer, speed)
+
         return data, (
             img_traffic,
             command_waypoints,
@@ -392,4 +413,11 @@ class CarlaMVDetDataset(BaseIODataset):
             det_data,
             img_traj,
             stop_sign,
+            action,
         )
+
+    def _get_action(self, steering, speed) -> int:
+        speed_index = np.argmin(np.abs(self.speed_actions - speed))
+        steering_index = np.argmin(np.abs(self.steer_actions - steering))
+
+        return int(speed_index * len(self.steer_actions) + steering_index)
