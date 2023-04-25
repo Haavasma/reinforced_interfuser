@@ -101,7 +101,7 @@ def train(config: TrainingConfig) -> None:
             worker_health_probe_timeout_s=60,
             worker_restore_timeout_s=60,
         )
-        .resources(num_gpus=1)
+        .resources(num_gpus=len(set(config["gpus"])))
         .environment(name)
         .training()
         .framework("torch")
@@ -110,7 +110,7 @@ def train(config: TrainingConfig) -> None:
     tune.run(
         APPO,
         config=algo_config.to_dict(),
-        stop={"timesteps_total": 100_000},
+        stop={"timesteps_total": 200_000},
         callbacks=[WandbLoggerCallback(project=experiment_name, log_config=True)],
     )
 
