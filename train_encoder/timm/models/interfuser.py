@@ -66,14 +66,11 @@ class HybridEmbed(nn.Module):
 
 
 class LinearActionPredictor(nn.Module):
-    def __init__(self, input_dim: int, hidden_size=256, n_actions=93):
+    def __init__(self, input_dim: int, hidden_size=64, n_actions=93):
         super().__init__()
         self.n_actions = n_actions
         self.target_encoder = nn.Sequential(nn.Linear(2, hidden_size), nn.ReLU())
         self.encode = nn.Sequential(nn.Linear(input_dim, hidden_size), nn.ReLU())
-        self.hidden_layer = nn.Sequential(
-            nn.Linear(hidden_size * 2, hidden_size * 2), nn.ReLU()
-        )
         self.action_head = nn.Linear(hidden_size * 2, n_actions)
 
     def forward(self, x, target_point, depth=3):
