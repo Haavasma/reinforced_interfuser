@@ -2,6 +2,7 @@ import numpy as np
 from collections import deque
 from team_code.render import render, render_self_car, find_peak_box
 
+
 class PIDController(object):
     def __init__(self, K_P=1.0, K_I=0.0, K_D=0.0, n=20):
         self._K_P = K_P
@@ -26,6 +27,7 @@ class PIDController(object):
 
         return self._K_P * error + self._K_I * integral + self._K_D * derivative
 
+
 def downsample_waypoints(waypoints, precision=0.2):
     """
     waypoints: [float lits], 10 * 2, m
@@ -45,6 +47,7 @@ def downsample_waypoints(waypoints, precision=0.2):
         last_waypoint = now_waypoint
     return downsampled_waypoints
 
+
 def collision_detections(map1, map2, threshold=0.04):
     """
     map1: rendered surround vehicles
@@ -59,7 +62,10 @@ def collision_detections(map1, map2, threshold=0.04):
     else:
         return False
 
-def get_max_safe_distance(meta_data, downsampled_waypoints, t, collision_buffer, threshold):
+
+def get_max_safe_distance(
+    meta_data, downsampled_waypoints, t, collision_buffer, threshold
+):
     surround_map = render(meta_data.reshape(20, 20, 7), t=t)[0][:100, 40:140]
     if np.sum(surround_map) < 1:
         return np.linalg.norm(downsampled_waypoints[-3])
@@ -77,6 +83,7 @@ def get_max_safe_distance(meta_data, downsampled_waypoints, t, collision_buffer,
             break
         safe_distance = max(safe_distance, np.linalg.norm(loc))
     return safe_distance
+
 
 class InterfuserController(object):
     def __init__(self, config):
@@ -237,22 +244,25 @@ class InterfuserController(object):
         if speed > desired_speed * self.config.brake_ratio:
             brake = True
 
-        '''
+        """
         meta_info_1 = "d0:%.1f, d05:%.1f, d1:%.1f, desired_speed:%.2f" % (
             d_0,
             d_05,
             d_1,
             desired_speed,
         )
-        '''
+        """
         meta_info_1 = "speed: %.2f, target_speed: %.2f" % (
             speed,
             desired_speed,
         )
-        meta_info_2 = "on_road_prob: %.2f, red_light_prob: %.2f, stop_sign_prob: %.2f" % (
-            junction,
-            traffic_light_state,
-            1 - stop_sign,
+        meta_info_2 = (
+            "on_road_prob: %.2f, red_light_prob: %.2f, stop_sign_prob: %.2f"
+            % (
+                junction,
+                traffic_light_state,
+                1 - stop_sign,
+            )
         )
         meta_info_3 = "stop_steps:%d, block_stop_sign_distance:%.1f" % (
             self.stop_steps,

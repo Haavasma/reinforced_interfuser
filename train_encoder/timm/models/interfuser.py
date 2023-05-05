@@ -387,6 +387,31 @@ class GRUWaypointsPredictor(nn.Module):
         return output
 
 
+class GRUWaypointsMDN(nn.Module):
+    def __init__(self, input_dim, waypoints=10):
+        super().__init__()
+        self.gru = torch.nn.GRU(input_size=input_dim, hidden_size=64, batch_first=True)
+        self.encoder = nn.Linear(2, 64)
+        self.waypoints = waypoints
+
+        # MDN output layers
+        self.mu_layer = nn.Linear(64, 2)  # x and y coordinates
+        self.sigma_layer = nn.Linear(64, 2)
+
+    def forward(self, x, target_point):
+        bs = x.shape[0]
+
+        z = self.encoder(target_point).unsqueeze(0)
+        output, _ = self.gru(x, z)
+        output = output.reshape(bs, self.waypoints, -1)
+
+        mu = self.mu_layer(output).reshape(bs, self.waypoints, 2)
+        mu = torch.cumsum(mu, 1)
+        sigma = torch.exp(self.sigma_layer(output).reshape(bs, self.waypoints, 2))
+
+        return mu, sigma
+
+
 class TransformerDecoder(nn.Module):
     def __init__(self, decoder_layer, num_layers, norm=None, return_intermediate=False):
         super().__init__()
@@ -852,16 +877,16 @@ class Interfuser(nn.Module):
         self.global_embed = nn.Parameter(torch.zeros(1, embed_dim, 5))
         self.view_embed = nn.Parameter(torch.zeros(1, embed_dim, 5, 1))
 
-        self.query_pos_embed = nn.Parameter(torch.zeros(1, embed_dim, 2))
-        self.query_embed = nn.Parameter(torch.zeros(400 + 2, 1, embed_dim))
+        self.query_pos_embed = nn.Parameter(torch.zeros(1, embed_dim, 12))
+        self.query_embed = nn.Parameter(torch.zeros(400 + 12, 1, embed_dim))
 
         # Find out where the CLASS token should be implemented, to mirror
         # how text classification is done.
-        # self.waypoints_generator = GRUWaypointsPredictor(embed_dim)
+        self.waypoints_generator = GRUWaypointsMDN(embed_dim)
 
         # self.action_pred_head = SquashedGaussianModel(embed_dim, 64)
 
-        self.action_pred_head = LinearActionPredictor(embed_dim, n_actions=n_actions)
+        # self.action_pred_head = LinearActionPredictor(embed_dim, n_actions=n_actions)
 
         self.junction_pred_head = nn.Linear(embed_dim, 2)
         self.traffic_light_pred_head = nn.Linear(embed_dim, 2)
@@ -1095,13 +1120,14 @@ class Interfuser(nn.Module):
         is_junction_feature = hs[:, 400]
         traffic_light_state_feature = hs[:, 400]
         stop_sign_feature = hs[:, 400]
-        # waypoints_feature = hs[:, 401:411]
-        action_feature = hs[:, 401]
+        waypoints_feature = hs[:, 401:411]
+        target_feature = hs[:, 411]
 
         # waypoints = self.waypoints_generator(waypoints_feature, target_point)
 
-        action_probs = self.action_pred_head(action_feature, target_point)
+        waypoint_probs = self.waypoints_generator(waypoints_feature, target_point)
 
+        # action_probs = self.action_pred_head(action_feature, target_point)
         is_junction = self.junction_pred_head(is_junction_feature)
         traffic_light_state = self.traffic_light_pred_head(traffic_light_state_feature)
         stop_sign = self.stop_sign_head(stop_sign_feature)
@@ -1116,10 +1142,9 @@ class Interfuser(nn.Module):
             is_junction,
             traffic_light_state,
             stop_sign,
-            # waypoints,
-            action_probs,
+            waypoint_probs,
             traffic_feature,
-            action_feature,
+            target_feature,
         )
 
 

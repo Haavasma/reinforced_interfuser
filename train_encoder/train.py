@@ -17,6 +17,7 @@ Hacked together by / Copyright 2020 Ross Wightman (https://github.com/rwightman)
 import argparse
 import time
 import numpy
+from numpy.linalg import inv
 import yaml
 import os
 import logging
@@ -771,6 +772,44 @@ parser.add_argument(
 )
 
 
+def mdn_loss(y, pi, mu, sigma):
+    m = torch.distributions.Normal(loc=mu, scale=sigma)
+    y = y.unsqueeze(1).expand_as(mu)
+
+    prob = m.log_prob(y) + torch.log(pi)
+    nll = -torch.logsumexp(prob, dim=1)
+    return nll.mean()
+
+
+class WaypointMDNLoss:
+    def __init__(self, nll_loss=torch.nn.GaussianNLLLoss):
+        self.weights = [
+            0.1407441030399059,
+            0.13352157985305926,
+            0.12588535273178575,
+            0.11775496498388233,
+            0.10901991343009122,
+            0.09952110967153563,
+            0.08901438656870617,
+            0.07708872007078788,
+            0.06294267636589287,
+            0.04450719328435308,
+        ]
+        self.loss = nll_loss(reduction="none")
+
+    def __call__(self, output, target):
+        mu, sigma = output
+
+        invaild_mask = target.ge(1000)
+        mu[invaild_mask] = 0
+        target[invaild_mask] = 0
+        # convert weights to tensor:
+        loss = self.loss(mu, target, sigma)
+        loss = torch.mean(loss, (0, 2))
+        loss = loss * torch.Tensor(self.weights).to(mu.device)
+        return torch.mean(loss)
+
+
 class WaypointL1Loss:
     def __init__(self, l1_loss=torch.nn.L1Loss):
         self.loss = l1_loss(reduction="none")
@@ -1146,14 +1185,14 @@ def main():
 
     train_loss_fns = {
         "traffic": MVTL1Loss(1.0, l1_loss=l1_loss),
-        "waypoints": WaypointL1Loss(l1_loss=l1_loss),
+        "waypoints": WaypointMDNLoss(),
         "cls": cls_loss,
         "stop_cls": cls_loss,
         "action_cls": cls_loss,
     }
     validate_loss_fns = {
         "traffic": MVTL1Loss(1.0, l1_loss=l1_loss),
-        "waypoints": WaypointL1Loss(l1_loss=l1_loss),
+        "waypoints": WaypointMDNLoss(),
         "cls": cls_loss,
         "stop_cls": cls_loss,
         "action_cls": cls_loss,
@@ -1311,7 +1350,7 @@ def train_one_epoch(
     losses_junction = AverageMeter()
     losses_traffic_light_state = AverageMeter()
     losses_stop_sign = AverageMeter()
-    losses_actions = AverageMeter()
+    # losses_actions = AverageMeter()
 
     model.train()
 
@@ -1351,8 +1390,8 @@ def train_one_epoch(
 
             loss_traffic_light_state = loss_fns["cls"](output[2], target[3])
             loss_stop_sign = loss_fns["stop_cls"](output[3], target[6])
-            # loss_waypoints = loss_fns["waypoints"](output[4], target[1])
-            loss_action = loss_fns["action_cls"](output[4], target[7])
+            loss_waypoints = loss_fns["waypoints"](output[4], target[1])
+            # loss_action = loss_fns["action_cls"](output[4], target[7])
 
             loss = (
                 loss_traffic * 0.5
@@ -1360,7 +1399,7 @@ def train_one_epoch(
                 + loss_junction * 0.05
                 + loss_traffic_light_state * 0.1
                 + loss_stop_sign * 0.01
-                + loss_action * 0.2
+                + loss_waypoints * 0.2
             )
 
         if not args.distributed:
@@ -1372,8 +1411,8 @@ def train_one_epoch(
                 loss_traffic_light_state.item(), batch_size
             )
             losses_stop_sign.update(loss_stop_sign.item(), batch_size)
-            # losses_waypoints.update(loss_waypoints.item(), batch_size)
-            losses_actions.update(loss_action.item(), batch_size)
+            losses_waypoints.update(loss_waypoints.item(), batch_size)
+            # losses_actions.update(loss_action.item(), batch_size)
 
         optimizer.zero_grad()
         if loss_scaler is not None:
@@ -1533,7 +1572,7 @@ def train_one_epoch(
             if args.log_wandb:
                 wandb.log(
                     {
-                        "Train/traffic predictions": [
+                        "Train/Traffic predictions": [
                             wandb.Image(
                                 pred_traffic_render, caption="Train: prediction"
                             ),
@@ -1545,14 +1584,14 @@ def train_one_epoch(
                         "Train/Cameras": [
                             wandb.Image(
                                 retransform(input["rgb_left"][0]),
-                                caption="Front view",
+                                caption="Left view",
                             ),
                             wandb.Image(
                                 retransform(input["rgb"][0]), caption="Front view"
                             ),
                             wandb.Image(
                                 retransform(input["rgb_right"][0]),
-                                caption="Front view",
+                                caption="Right view",
                             ),
                         ],
                         "Train/Lidar": [
@@ -1564,20 +1603,26 @@ def train_one_epoch(
                                 )
                             )
                         ],
-                        # "Train/Waypoints": [
-                        #     wandb.Image(
-                        #         render_waypoints(output[4][0].detach().cpu().numpy())[
-                        #             :100, 40:140
-                        #         ],
-                        #         caption="waypoints",
-                        #     )
-                        # ],
+                        "Train/Waypoints": [
+                            wandb.Image(
+                                render_waypoints(
+                                    output[4][0][0].detach().cpu().numpy()
+                                )[:100, 40:140],
+                                caption="Predicted",
+                            ),
+                            wandb.Image(
+                                render_waypoints(target[1][0].detach().cpu().numpy())[
+                                    :100, 40:140
+                                ],
+                                caption="target",
+                            ),
+                        ],
                     }
                 )
 
-                print(
-                    f"Action: {numpy.argmax(output[4][0].detach().cpu().numpy())}, Ground truth: {target[7][0]}"
-                )
+                # print(
+                #     f"Action: {numpy.argmax(output[4][0].detach().cpu().numpy())}, Ground truth: {target[7][0]}"
+                # )
 
             if args.local_rank == 0:
                 _logger.info(
@@ -1585,8 +1630,8 @@ def train_one_epoch(
                     "Loss(traffic): {loss_traffic.val:>9.6f} ({loss_traffic.avg:>6.4f})  "
                     "Loss(junction): {loss_junction.val:>9.6f} ({loss_junction.avg:>6.4f})  "
                     "Loss(light): {loss_traffic_light_state.val:>9.6f} ({loss_traffic_light_state.avg:>6.4f})  "
-                    # "Loss(waypoints): {loss_waypoints.val:>9.6f} ({loss_waypoints.avg:>6.4f})  "
-                    "Loss(actions): {loss_actions.val:>9.6f} ({loss_actions.avg:>6.4f})  "
+                    "Loss(waypoints): {loss_waypoints.val:>9.6f} ({loss_waypoints.avg:>6.4f})  "
+                    # "Loss(actions): {loss_actions.val:>9.6f} ({loss_actions.avg:>6.4f})  "
                     "Loss: {loss.val:>9.6f} ({loss.avg:>6.4f})  "
                     "Time: {batch_time.val:.3f}s, {rate:>7.2f}/s  "
                     "({batch_time.avg:.3f}s, {rate_avg:>7.2f}/s)  "
@@ -1600,8 +1645,8 @@ def train_one_epoch(
                         loss_traffic=losses_traffic,
                         loss_junction=losses_junction,
                         loss_traffic_light_state=losses_traffic_light_state,
-                        # loss_waypoints=losses_waypoints,
-                        loss_actions=losses_actions,
+                        loss_waypoints=losses_waypoints,
+                        # loss_actions=losses_actions,
                         batch_time=batch_time_m,
                         rate=batch_size * args.world_size / batch_time_m.val,
                         rate_avg=batch_size * args.world_size / batch_time_m.avg,
@@ -1641,8 +1686,8 @@ def train_one_epoch(
             ("loss_junction", losses_junction.avg),
             ("loss_traffic_light_state", losses_traffic_light_state.avg),
             ("loss_stop_sign", losses_stop_sign.avg),
-            # ("loss_waypoints", losses_waypoints.avg),
-            ("loss_actions", losses_actions.avg),
+            ("loss_waypoints", losses_waypoints.avg),
+            # ("loss_actions", losses_actions.avg),
         ]
     )
 
@@ -1657,14 +1702,14 @@ def validate(
     losses_junction = AverageMeter()
     losses_traffic_light_state = AverageMeter()
     losses_stop_sign = AverageMeter()
-    # losses_waypoints = AverageMeter()
-    losses_actions = AverageMeter()
+    losses_waypoints = AverageMeter()
+    # losses_actions = AverageMeter()
 
     l1_errorm = AverageMeter()
     junction_errorm = AverageMeter()
     traffic_light_state_errorm = AverageMeter()
     stop_sign_errorm = AverageMeter()
-    action_errorm = AverageMeter()
+    # action_errorm = AverageMeter()
 
     model.eval()
 
@@ -1708,22 +1753,22 @@ def validate(
             on_road_mask = target[2] < 0.5
             loss_traffic_light_state = loss_fns["cls"](output[2], target[3])
             loss_stop_sign = loss_fns["stop_cls"](output[3], target[6])
-            # loss_waypoints = loss_fns["waypoints"](output[4], target[1])
-            loss_actions = loss_fns["action_cls"](output[4], target[7])
+            loss_waypoints = loss_fns["waypoints"](output[4], target[1])
+            # loss_actions = loss_fns["action_cls"](output[4], target[7])
             loss = (
                 loss_traffic * 0.5
                 + loss_velocity * 0.05
                 + loss_junction * 0.05
                 + loss_traffic_light_state * 0.1
                 + loss_stop_sign * 0.01
-                # + loss_waypoints * 0.2
-                + loss_actions * 0.05
+                + loss_waypoints * 0.2
+                # + loss_actions * 0.05
             )
 
             junction_error = accuracy(output[1], target[2])[0]
             traffic_light_state_error = accuracy(output[2], target[3])[0]
             stop_sign_error = accuracy(output[3], target[6])[0]
-            action_error = accuracy(output[4], target[7])[0]
+            # action_error = accuracy(output[4], target[7])[0]
 
             if args.distributed:
                 reduced_loss = reduce_tensor(loss.data, args.world_size)
@@ -1741,11 +1786,11 @@ def validate(
                     loss_stop_sign.data, args.world_size
                 )
 
-                # reduced_loss_waypoints = reduce_tensor(
-                #     loss_waypoints.data, args.world_size
-                # )
+                reduced_loss_waypoints = reduce_tensor(
+                    loss_waypoints.data, args.world_size
+                )
 
-                reduced_loss_actions = reduce_tensor(loss_actions.data, args.world_size)
+                # reduced_loss_actions = reduce_tensor(loss_actions.data, args.world_size)
 
                 reduced_junction_error = reduce_tensor(junction_error, args.world_size)
                 reduced_traffic_light_state_error = reduce_tensor(
@@ -1756,7 +1801,7 @@ def validate(
                     stop_sign_error, args.world_size
                 )
 
-                reduced_action_error = reduce_tensor(action_error, args.world_size)
+                # reduced_action_error = reduce_tensor(action_error, args.world_size)
             else:
                 reduced_loss = loss.data
                 reduced_loss_traffic = loss_traffic.data
@@ -1764,15 +1809,15 @@ def validate(
 
                 reduced_loss_junction = loss_junction.data
                 reduced_loss_traffic_light_state = loss_traffic_light_state.data
-                # reduced_loss_waypoints = loss_waypoints.data
-                reduced_loss_actions = loss_actions.data
+                reduced_loss_waypoints = loss_waypoints.data
+                # reduced_loss_actions = loss_actions.data
 
                 reduced_loss_stop_sign = loss_stop_sign.data
                 reduced_junction_error = junction_error
                 reduced_traffic_light_state_error = traffic_light_state_error
                 reduced_stop_sign_error = stop_sign_error
 
-                reduced_action_error = action_error
+                # reduced_action_error = action_error
 
             torch.cuda.synchronize()
 
@@ -1785,9 +1830,9 @@ def validate(
             )
             losses_stop_sign.update(reduced_loss_stop_sign.item(), batch_size)
 
-            # losses_waypoints.update(reduced_loss_waypoints.item(), batch_size)
+            losses_waypoints.update(reduced_loss_waypoints.item(), batch_size)
 
-            losses_actions.update(reduced_loss_actions.item(), batch_size)
+            # losses_actions.update(reduced_loss_actions.item(), batch_size)
 
             l1_errorm.update(reduced_loss.item(), batch_size)
             junction_errorm.update(reduced_junction_error.item(), batch_size)
@@ -1796,7 +1841,7 @@ def validate(
             )
             stop_sign_errorm.update(reduced_stop_sign_error.item(), batch_size)
 
-            action_errorm.update(reduced_action_error.item(), batch_size)
+            # action_errorm.update(reduced_action_error.item(), batch_size)
 
             batch_time_m.update(time.time() - end)
             end = time.time()
@@ -1811,7 +1856,8 @@ def validate(
                     "Loss(traffic): {loss_traffic.val:>7.4f} ({loss_traffic.avg:>6.4f})  "
                     "Loss(junction): {loss_junction.val:>9.6f} ({loss_junction.avg:>6.4f})  "
                     "Loss(light): {loss_traffic_light_state.val:>9.6f} ({loss_traffic_light_state.avg:>6.4f})  "
-                    "Loss(actions): {loss_actions.val:>7.4f} ({loss_actions.avg:>6.4f})  "
+                    "Loss(waypoints): {loss_waypoints.val:>7.4f} ({loss_waypoints.avg:>6.4f})  "
+                    # "Loss(actions): {loss_actions.val:>7.4f} ({loss_actions.avg:>6.4f})  "
                     "Acc(junction): {junction_errorm.val:>9.6f} ({junction_errorm.avg:>6.4f})  "
                     "Acc(light): {traffic_light_state_errorm.val:>9.6f} ({traffic_light_state_errorm.avg:>6.4f})  ".format(
                         log_name,
@@ -1824,8 +1870,8 @@ def validate(
                         junction_errorm=junction_errorm,
                         loss=losses_m,
                         loss_traffic=losses_traffic,
-                        # loss_waypoints=losses_waypoints,
-                        loss_actions=losses_actions,
+                        loss_waypoints=losses_waypoints,
+                        # loss_actions=losses_actions,
                     )
                 )
                 if writer:
@@ -1884,24 +1930,24 @@ def validate(
                         epoch,
                     )
 
-                    # writer.add_image(
-                    #     "val/%d_pred_waypoints" % batch_idx,
-                    #     torch.clip(
-                    #         torch.tensor(
-                    #             render_waypoints(output[4][0].detach().cpu().numpy())[
-                    #                 :100, 40:140
-                    #             ]
-                    #         ),
-                    #         0,
-                    #         255,
-                    #     ).view(1, 100, 100),
-                    #     epoch,
-                    # )
+                    writer.add_image(
+                        "val/%d_pred_waypoints" % batch_idx,
+                        torch.clip(
+                            torch.tensor(
+                                render_waypoints(
+                                    output[4][0][0].detach().cpu().numpy()
+                                )[:100, 40:140]
+                            ),
+                            0,
+                            255,
+                        ).view(1, 100, 100),
+                        epoch,
+                    )
 
                     if args.log_wandb:
                         wandb.log(
                             {
-                                "Val/traffic predictions": [
+                                "Val/Traffic predictions": [
                                     wandb.Image(
                                         pred_traffic_render, caption="Val: prediction"
                                     ),
@@ -1913,7 +1959,7 @@ def validate(
                                 "Val/Cameras": [
                                     wandb.Image(
                                         retransform(input["rgb_left"][0]),
-                                        caption="Front view",
+                                        caption="Left view",
                                     ),
                                     wandb.Image(
                                         retransform(input["rgb"][0]),
@@ -1921,10 +1967,10 @@ def validate(
                                     ),
                                     wandb.Image(
                                         retransform(input["rgb_right"][0]),
-                                        caption="Front view",
+                                        caption="Right view",
                                     ),
                                 ],
-                                "Val/Lidar": [
+                                "Lidar": [
                                     wandb.Image(
                                         torch.clip(
                                             input["lidar"][0]
@@ -1934,18 +1980,32 @@ def validate(
                                         )
                                     )
                                 ],
+                                "Val/Waypoints": [
+                                    wandb.Image(
+                                        render_waypoints(
+                                            output[4][0][0].detach().cpu().numpy()
+                                        )[:100, 40:140],
+                                        caption="Predicted",
+                                    ),
+                                    wandb.Image(
+                                        render_waypoints(
+                                            target[1][0].detach().cpu().numpy()
+                                        )[:100, 40:140],
+                                        caption="target",
+                                    ),
+                                ],
                             }
                         )
-                        print(
-                            f"Action: {numpy.argmax(output[4][0].detach().cpu().numpy())}, Ground truth: {target[7][0]}"
-                        )
+                        # print(
+                        #     f"Action: {numpy.argmax(output[4][0].detach().cpu().numpy())}, Ground truth: {target[7][0]}"
+                        # )
 
         if writer:
             writer.add_scalar("val/loss", losses_m.avg, epoch)
             writer.add_scalar("val/loss_traffic", losses_traffic.avg, epoch)
             writer.add_scalar("val/loss_velocity", losses_velocity.avg, epoch)
-            # writer.add_scalar("val/loss_waypoints", losses_waypoints.avg, epoch)
-            writer.add_scalar("val/loss_actions", losses_actions.avg, epoch)
+            writer.add_scalar("val/loss_waypoints", losses_waypoints.avg, epoch)
+            # writer.add_scalar("val/loss_actions", losses_actions.avg, epoch)
             writer.add_scalar("val/loss_junction", losses_junction.avg, epoch)
             writer.add_scalar(
                 "val/loss_traffic_light_state", losses_traffic_light_state.avg, epoch
@@ -1956,15 +2016,15 @@ def validate(
                 "val/acc_traffic_light_state", traffic_light_state_errorm.avg, epoch
             )
             writer.add_scalar("val/acc_stop_sign", stop_sign_errorm.avg, epoch)
-            writer.add_scalar("val/acc_actions", action_errorm.avg, epoch)
+            # writer.add_scalar("val/acc_actions", action_errorm.avg, epoch)
 
     metrics = OrderedDict(
         [
             ("loss", losses_m.avg),
             ("l1_error", l1_errorm.avg),
             ("loss_traffic", losses_traffic.avg),
-            # ("loss_waypoints", losses_waypoints.avg),
-            ("loss_actions", losses_actions.avg),
+            ("loss_waypoints", losses_waypoints.avg),
+            # ("loss_actions", losses_actions.avg),
             ("loss_velocity", losses_velocity.avg),
             ("loss_junction", losses_junction.avg),
             ("loss_traffic_light_state", losses_traffic_light_state.avg),
@@ -1972,7 +2032,7 @@ def validate(
             ("acc_junction", junction_errorm.avg),
             ("acc_traffic_light_state", traffic_light_state_errorm.avg),
             ("acc_stop_sign", stop_sign_errorm.avg),
-            ("acc_errorm", action_errorm.avg),
+            # ("acc_errorm", action_errorm.avg),
         ]
     )
 

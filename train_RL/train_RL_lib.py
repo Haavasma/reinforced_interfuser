@@ -207,7 +207,7 @@ def train(config: TrainingConfig) -> None:
         stop={"timesteps_total": 1_000_000},
         resume="LOCAL+ERRORED" if config["resume"] else False,
         # raise_on_failed_trial=False,
-        checkpoint_freq=1,
+        checkpoint_freq=10,
         checkpoint_at_end=True,
         local_dir="./models/",
         callbacks=[
