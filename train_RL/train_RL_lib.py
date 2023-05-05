@@ -212,9 +212,9 @@ def train(config: TrainingConfig) -> None:
         resume="LOCAL+ERRORED" if config["resume"] else False,
         # raise_on_failed_trial=False,
         checkpoint_freq=10,
-        checkpoint_at_end=True,
+        checkpoint_at_end=False,
         local_dir="./models/",
-        fail_fast=True,
+        fail_fast=False,
         callbacks=[
             WandbLoggerCallback(
                 project="Sensor fusion AD RL",
@@ -241,7 +241,8 @@ def make_carla_env(
         episode_config.training_type = (
             TrainingType.EVALUATION if evaluation else TrainingType.TRAINING
         )
-        episode_manager = EpisodeManager(episode_config, gpu_device=i % gpus)
+        time.sleep(5*i)
+        episode_manager = EpisodeManager(episode_config, gpu_device=i%gpus)
         speed_controller = TestSpeedController()
 
         vision_module = None
