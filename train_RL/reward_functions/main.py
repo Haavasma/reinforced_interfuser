@@ -170,7 +170,7 @@ def calculate_desired_speed(speed_limit: float, distance: float) -> float:
 
 def calculate_speed_reward(speed: float, desired_speed: float) -> float:
     speed_diff = abs(speed - desired_speed)
-    max_speed_diff = 4.0
+    max_speed_diff = 3.0
 
     if speed > desired_speed:
         max_speed_diff = 0.5
@@ -179,7 +179,7 @@ def calculate_speed_reward(speed: float, desired_speed: float) -> float:
         max_speed_diff = 0.01
 
     if speed <= 0.5 and desired_speed > 2.0:
-        return 0.0
+        return -1.0
 
     if speed_diff > max_speed_diff:
         return 0.0
