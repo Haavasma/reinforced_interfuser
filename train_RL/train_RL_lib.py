@@ -132,7 +132,7 @@ rl_config = {"policy_type": "MultiInputPolicy", "total_timesteps": 999999}
 
 class TrainingConfig(TypedDict):
     workers: int
-    gpus: List[int]
+    gpus: int
     resume: bool
     eval: bool
     vision_module: str
@@ -192,10 +192,11 @@ def train(config: TrainingConfig) -> None:
             validate_workers_after_construction=True,
             worker_health_probe_timeout_s=60,
             worker_restore_timeout_s=60,
+            num_consecutive_worker_failures_tolerance=0,
         )
-        .resources(num_gpus=len(set(config["gpus"])))
+        .resources(num_gpus=config["gpus"])
         .environment(name)
-        .training()
+        .training(gamma=0.95, lr=1e-4)
         .framework("torch")
     )
 
@@ -223,7 +224,7 @@ def train(config: TrainingConfig) -> None:
 
 def make_carla_env(
     carla_config: CarlaEnvironmentConfiguration,
-    gpus: List[int],
+    gpus: int,
     vision_module_name: str,
     weights_file: str,
     seed: int = 0,
@@ -244,7 +245,7 @@ def make_carla_env(
         if vision_module_name == "transfuser":
             config = GlobalConfig(setting="eval")
             backbone = setup_transfuser_backbone(
-                config, weights_file, device=f"cuda:{gpus[i]}"
+                config, weights_file, device=f"cuda:{i%gpus}"
             )
             vision_module = TransfuserVisionModule(backbone, config)
 
@@ -338,6 +339,10 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--gpus", type=int, default=1, help="Amount of GPUS available (default: 1)"
+    )
+
+    parser.add_argument(
         "--resume", action="store_true", help="Resume training (default: False)"
     )
 
@@ -356,12 +361,14 @@ if __name__ == "__main__":
 
     workers = args.workers
 
+    gpus = args.gpus
+
     _ = [x.strip() for x in "".split(",")]
 
     train(
         {
             "workers": workers,
-            "gpus": [0 for _ in range(workers)],
+            "gpus": gpus,
             "resume": bool(args.resume),
             "vision_module": args.vision_module,
             "weights": args.weights,
