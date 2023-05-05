@@ -24,7 +24,7 @@ class Reward:
 def reward_function(state: WorldState) -> Tuple[float, bool]:
     # Speed reward
     dist_to_hazard = closest_hazard(state)
-    speed_limit = state.ego_vehicle_state.privileged.speed_limit
+    speed_limit = 6.0
     speed = state.ego_vehicle_state.speed
 
     if len(state.ego_vehicle_state.privileged.collision_history.items()) > 0:
@@ -70,7 +70,7 @@ def reward_function(state: WorldState) -> Tuple[float, bool]:
     # Distance reward
     distance_reward = _calculate_distance_reward(distance_diff)
     if distance_reward < 0:
-        return -1, True
+        return -50, True
 
     result = Reward(speed_reward, angle_reward, distance_reward).calculate_reward()
 
@@ -132,7 +132,6 @@ def _get_closest_waypoint(
     closest_index = 0
     closest_distance = 1000000000.0
     for index, waypoint in enumerate(waypoints):
-
         waypoint_location = waypoint[0].location
 
         distance = vector_distance(
@@ -171,7 +170,7 @@ def calculate_desired_speed(speed_limit: float, distance: float) -> float:
 
 def calculate_speed_reward(speed: float, desired_speed: float) -> float:
     speed_diff = abs(speed - desired_speed)
-    max_speed_diff = 3.0
+    max_speed_diff = 4.0
 
     if speed > desired_speed:
         max_speed_diff = 0.5
@@ -180,7 +179,7 @@ def calculate_speed_reward(speed: float, desired_speed: float) -> float:
         max_speed_diff = 0.01
 
     if speed <= 0.5 and desired_speed > 2.0:
-        return -1.0
+        return 0.0
 
     if speed_diff > max_speed_diff:
         return 0.0
