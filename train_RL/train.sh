@@ -1,10 +1,9 @@
 #!/bin/bash
-#!/bin/bash
 #SBATCH --partition=GPUQ
 #SBATCH --account=ie-idi
 #SBATCH --time=1:00:00
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=4
+#SBATCH --ntasks-per-node=5
 #SBATCH --job-name="Training Baseline carla agent sequential"
 #SBATCH --output=test-baseline.out
 #SBATCH --mail-user=haavasma@stud.ntnu.no
@@ -36,14 +35,15 @@ eval "$(conda shell.bash hook)"
 conda activate rl_train
 
 
-workers=1
-python train_RL_lib.py --workers $workers
+workers=4
+gpus=1
+python train_RL_lib.py --workers $workers --gpus $gpus
 pkill -f CarlaUE4
 pkill -f CarlaUE4
 
 while true
   do 
-  python train_RL_lib.py --workers $workers --resume
+  python train_RL_lib.py --workers $workers --gpus $gpus --resume
   pkill -f CarlaUE4
   pkill -f CarlaUE4
   sleep 1
