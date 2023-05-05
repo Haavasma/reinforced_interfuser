@@ -210,9 +210,10 @@ def train(config: TrainingConfig) -> None:
         config=algo_config.to_dict(),
         stop={"timesteps_total": 1_000_000},
         resume="LOCAL+ERRORED" if config["resume"] else False,
+        reuse_actors=True,
         # raise_on_failed_trial=False,
         checkpoint_freq=10,
-        checkpoint_at_end=True,
+        checkpoint_at_end=False,
         local_dir="./models/",
         fail_fast=True,
         callbacks=[
