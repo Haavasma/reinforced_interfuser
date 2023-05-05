@@ -1,6 +1,7 @@
 import argparse
 import os
 import pickle
+import time
 import uuid
 from typing import Any, Callable, List, TypedDict, Union
 
@@ -177,6 +178,8 @@ def train(config: TrainingConfig) -> None:
         seed=69,
     )
 
+    print("STEERING ACTIONS: ", carla_config["steering_actions"])
+
     name = "carla_env"
     register_env(name, create_env)
 
@@ -238,7 +241,7 @@ def make_carla_env(
         episode_config.training_type = (
             TrainingType.EVALUATION if evaluation else TrainingType.TRAINING
         )
-        episode_manager = EpisodeManager(episode_config)
+        episode_manager = EpisodeManager(episode_config, gpu_device=i % gpus)
         speed_controller = TestSpeedController()
 
         vision_module = None
