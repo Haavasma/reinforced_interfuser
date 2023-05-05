@@ -1,15 +1,15 @@
 #!/bin/bash
 #SBATCH --partition=GPUQ
 #SBATCH --account=ie-idi
-#SBATCH --time=1:00:00
+#SBATCH --time=5:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=6
-#SBATCH --mem=51G
-#SBATCH --job-name="Training Baseline carla agent sequential"
+#SBATCH --mem=100G
+#SBATCH --job-name="Training Baseline carla agent 4 workers"
 #SBATCH --output=test-baseline.out
 #SBATCH --mail-user=haavasma@stud.ntnu.no
 #SBATCH --mail-type=ALL
-#SBATCH --gres=gpu:V10032:1
+#SBATCH --gres=gpu:2
 
 
 WORKDIR=${SLURM_SUBMIT_DIR}
@@ -37,7 +37,7 @@ conda activate rl_train
 
 
 workers=4
-gpus=1
+gpus=2
 python train_RL_lib.py --workers $workers --gpus $gpus
 pkill -f CarlaUE4
 pkill -f CarlaUE4
