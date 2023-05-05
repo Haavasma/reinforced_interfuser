@@ -211,6 +211,7 @@ def train(config: TrainingConfig) -> None:
         checkpoint_freq=10,
         checkpoint_at_end=True,
         local_dir="./models/",
+        fail_fast=True,
         callbacks=[
             WandbLoggerCallback(
                 project="Sensor fusion AD RL",
