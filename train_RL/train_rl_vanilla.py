@@ -10,6 +10,8 @@ from gym_env.env import (
     CarlaEnvironmentConfiguration,
     TestSpeedController,
 )
+
+import numpy as np
 from matplotlib.pyplot import Subplot
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import EvalCallback
@@ -34,8 +36,6 @@ rl_config = {"policy_type": "MultiInputPolicy", "total_timesteps": 1000000}
 
 
 class TrainingConfig(TypedDict):
-    ports: List[str]
-    traffic_manager_ports: List[str]
     resume: bool
     eval: bool
     vision_module: str
@@ -48,30 +48,26 @@ def validate_training_config(config: TrainingConfig) -> None:
     Throws an error if the config is not valid for the given system.
     """
     print("CONFIG: ", config)
-
-    if len(config["ports"]) != len(config["traffic_manager_ports"]):
-        raise ValueError("The number of ports and traffic manager ports must be equal")
-
     if config["vision_module"] != "" and config["weights"] == "":
         raise ValueError(
             "If a vision module is specified, a weights file must be specified as well"
         )
-
-    for port, traffic_manager_port in zip(
-        config["ports"], config["traffic_manager_ports"]
-    ):
-        if not port.isdigit():
-            raise ValueError(f"Port {port} is not a valid port number")
-        if not traffic_manager_port.isdigit():
-            raise ValueError(
-                f"Traffic manager port {traffic_manager_port} is not a valid port number"
-            )
 
 
 def train(config: TrainingConfig) -> None:
     experiment_name = "Scenario runner training baseline agent"
 
     validate_training_config(config)
+
+    carla_config: CarlaEnvironmentConfiguration = {
+        "speed_goal_actions": [0.0, 4.5, 6.0],
+        "steering_actions": np.linspace(-1.0, 1.0, 31).tolist(),
+        "discrete_actions": True,
+        "continuous_speed_range": (0.0, 6.0),
+        "continuous_steering_range": (-0.3, 0.3),
+        "towns": ["Town01"],
+        "town_change_frequency": 10,
+    }
 
     carla_config: CarlaEnvironmentConfiguration = {
         "speed_goal_actions": [0.0, 4.0, 6.0],
@@ -170,7 +166,7 @@ def train(config: TrainingConfig) -> None:
             env,
             verbose=2,
             gamma=0.95,
-            n_steps=1024,
+            n_steps=2048,
             # buffer_size=20_000,
             learning_rate=1e-4,
             # tau=0.005,
@@ -188,7 +184,7 @@ def train(config: TrainingConfig) -> None:
         pickle.dump(run_name, f)
 
     if rl_model is not None:
-        rl_model.learn(total_timesteps=config["steps"], callback=[])
+        rl_model.learn(total_timesteps=config["steps"], callback=[wandb_callback])
     # rl_model.save(f"./models/{run.id}/model")
 
     return
@@ -302,10 +298,6 @@ if __name__ == "__main__":
 
     train(
         {
-            "ports": [port.strip() for port in (args.ports).split(",")],
-            "traffic_manager_ports": [
-                port.strip() for port in (args.traffic_manager_ports).split(",")
-            ],
             "resume": bool(args.resume),
             "vision_module": args.vision_module,
             "weights": args.weights,

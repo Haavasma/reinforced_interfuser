@@ -1,13 +1,16 @@
-#!/bin/sh
+#!/bin/bash
 
 
-ports=2000,2003
-traffic_manager_ports=8000,8001
-# timeout 10m python train_rl_vanilla.py --ports $ports --traffic-manager-ports $traffic_manager_ports && break
+workers=2
+python train_RL_lib.py --workers $workers
+pkill -f CarlaUE4
+pkill -f CarlaUE4
 
 while true
   do 
-  timeout 10m python train_rl_vanilla.py --ports $ports --traffic-manager-ports $traffic_manager_ports --resume
+  python train_RL_lib.py --workers $workers --resume
+  pkill -f CarlaUE4
+  pkill -f CarlaUE4
   sleep 1
   done
 
