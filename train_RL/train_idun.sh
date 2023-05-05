@@ -1,15 +1,16 @@
-#!/bin/sh
+#!/bin/bash
 #SBATCH --partition=GPUQ
 #SBATCH --account=ie-idi
-#SBATCH --time=01:00:00
+#SBATCH --time=6:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=5
-#SBATCH --mem=24000
+#SBATCH --mem=51000
 #SBATCH --job-name="Training Baseline carla agent sequential"
 #SBATCH --output=test-baseline.out
 #SBATCH --mail-user=haavasma@stud.ntnu.no
 #SBATCH --mail-type=ALL
-#SBATCH --gres=gpu:2
+#SBATCH --gres=gpu:V10032:1
+
 
 WORKDIR=${SLURM_SUBMIT_DIR}
 
@@ -34,7 +35,7 @@ gpu_devices=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 
 port=2000
 traffic_manager_port=8000
-server_per_gpu=2
+server_per_gpu=4
 
 for (( i=0; i<$gpu_devices; i++ ))
 do
@@ -80,8 +81,11 @@ traffic_manager_ports_string=$(printf "%s" "${traffic_manager_ports[*]}")
 
 unset IFS
 
+module purge
+module load Anaconda3/2020.07
+eval "$(conda shell.bash hook)"
+conda activate rl_train
 
-make train \
-  PORTS=$ports_string \
-  TRAFFIC_MANAGER_PORTS=$traffic_manager_ports_string \
+python train_RL_lib.py --ports=$ports_string --traffic-manager-ports=$traffic_manager_ports_string
+
 
