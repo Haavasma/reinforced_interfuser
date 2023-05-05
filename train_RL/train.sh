@@ -3,7 +3,8 @@
 #SBATCH --account=ie-idi
 #SBATCH --time=1:00:00
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=5
+#SBATCH --ntasks-per-node=6
+#SBATCH --mem=51G
 #SBATCH --job-name="Training Baseline carla agent sequential"
 #SBATCH --output=test-baseline.out
 #SBATCH --mail-user=haavasma@stud.ntnu.no
