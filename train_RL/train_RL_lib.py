@@ -2,6 +2,7 @@ import argparse
 import os
 import pickle
 import uuid
+import time
 from typing import Any, Callable, List, TypedDict, Union
 
 import gymnasium as gym
@@ -241,8 +242,8 @@ def make_carla_env(
         episode_config.training_type = (
             TrainingType.EVALUATION if evaluation else TrainingType.TRAINING
         )
-        time.sleep(5*i)
-        episode_manager = EpisodeManager(episode_config, gpu_device=i%gpus)
+        time.sleep(5 * i)
+        episode_manager = EpisodeManager(episode_config, gpu_device=i % gpus)
         speed_controller = TestSpeedController()
 
         vision_module = None
