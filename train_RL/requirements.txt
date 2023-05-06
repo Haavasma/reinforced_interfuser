@@ -14,3 +14,6 @@ tensorboard==2.11.2
 wandb==0.13.5
 mmsegmentation==0.25.0
 mmdet==2.25.0
+pandas==1.5.1
+dm_tree==0.1.8
+lz4==4.3.2
