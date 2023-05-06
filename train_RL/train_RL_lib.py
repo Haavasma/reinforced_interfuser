@@ -203,13 +203,20 @@ def train(config: TrainingConfig) -> None:
         .framework("torch")
     )
 
+    print("RUN ALREADY HAS CHECKPOINT: ", os.path.exists(f"./models/{run_id}"))
+
+    if os.path.exists(f"./models/{run_id}"):
+        print("CHECKPOINTS: ", os.listdir(f"./models/{run_id}"))
+
     trainer = CustomAPPO  # if config["workers"] > 1 else PPO
     tune.run(
         trainer,
         name=run_id,
         config=algo_config.to_dict(),
         stop={"timesteps_total": 1_000_000},
-        resume="LOCAL+ERRORED" if config["resume"] else False,
+        resume="LOCAL+ERRORED"
+        if config["resume"] and os.path.exists(f"./models/{run_id}")
+        else False,
         reuse_actors=True,
         # raise_on_failed_trial=False,
         checkpoint_freq=10,
