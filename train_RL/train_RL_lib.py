@@ -203,32 +203,55 @@ def train(config: TrainingConfig) -> None:
         .framework("torch")
     )
 
-    print("RUN ALREADY HAS CHECKPOINT: ", os.path.exists(f"./models/{run_id}"))
+    experiment_dir = os.path.join("./models", run_id)
 
-    if os.path.exists(f"./models/{run_id}"):
-        print("CHECKPOINTS: ", os.listdir(f"./models/{run_id}"))
+    should_resume = config["resume"]
+
+    if should_resume:
+        checkpoints = False
+        if not os.path.exists(experiment_dir):
+            print(f"No experiment directory found at {experiment_dir}")
+            should_resume = False
+        else:
+            for trial_dir in os.listdir(experiment_dir):
+                trial_path = os.path.join(experiment_dir, trial_dir)
+                print(f"TRIAL PATH: {trial_path}")
+                if os.path.isdir(trial_path):
+                    print(f"SUBDIRS: {os.listdir(trial_path)}")
+                    checkpoints = [
+                        entry
+                        for entry in os.listdir(trial_path)
+                        if entry.startswith("checkpoint_")
+                    ]
+
+                    if checkpoints:
+                        print(
+                            f"Trial {trial_dir} has the following checkpoints: {checkpoints}"
+                        )
+                        checkpoints = True
+                    else:
+                        print(f"Trial {trial_dir} has no checkpoints")
+        if not checkpoints:
+            should_resume = False
 
     trainer = CustomAPPO  # if config["workers"] > 1 else PPO
     tune.run(
         trainer,
         name=run_id,
         config=algo_config.to_dict(),
-        stop={"timesteps_total": 500_000},
-        resume="LOCAL+ERRORED"
-        if config["resume"] and os.path.exists(f"./models/{run_id}")
-        else False,
-        reuse_actors=True,
-        # raise_on_failed_trial=False,
-        checkpoint_freq=10,
+        stop={"timesteps_total": 100_000},
+        resume="LOCAL+ERRORED" if should_resume else False,
+        # raise_on_failed_trial=True,
+        checkpoint_freq=5,
         checkpoint_at_end=False,
         local_dir="./models/",
-        fail_fast=False,
+        fail_fast="RAISE",
         callbacks=[
             WandbLoggerCallback(
                 project="Sensor fusion AD RL",
                 log_config=True,
                 upload_checkpoints=True,
-                resume=config["resume"],
+                resume=should_resume,
             ),
         ],
     )
