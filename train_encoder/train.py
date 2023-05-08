@@ -1339,7 +1339,6 @@ def train_one_epoch(
     model_ema=None,
     mixup_fn=None,
 ):
-
     second_order = hasattr(optimizer, "is_second_order") and optimizer.is_second_order
     batch_time_m = AverageMeter()
     data_time_m = AverageMeter()
@@ -1600,7 +1599,7 @@ def train_one_epoch(
                                     input["lidar"][0] / torch.max(input["lidar"][0]),
                                     0,
                                     1,
-                                )
+                                ).transpose(1, 2)
                             )
                         ],
                         "Train/Waypoints": [

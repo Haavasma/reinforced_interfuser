@@ -213,7 +213,7 @@ def train(config: TrainingConfig) -> None:
         trainer,
         name=run_id,
         config=algo_config.to_dict(),
-        stop={"timesteps_total": 1_000_000},
+        stop={"timesteps_total": 500_000},
         resume="LOCAL+ERRORED"
         if config["resume"] and os.path.exists(f"./models/{run_id}")
         else False,

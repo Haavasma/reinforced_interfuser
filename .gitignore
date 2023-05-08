@@ -9,6 +9,7 @@ __pycache__/
 test-baseline.out
 
 *.sif
+*.zip
 
 gym_environment/
 

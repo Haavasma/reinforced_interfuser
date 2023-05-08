@@ -1,8 +1,10 @@
 import numpy as np
 
 
-def main():
+from episode_manager.agent_handler.models.sensor import _to_bev
 
+
+def main():
     lidar_data = np.load(
         "../expert_data/routes_training_town01_w1_04_19_05_26_20/lidar/0038.npy"
     )

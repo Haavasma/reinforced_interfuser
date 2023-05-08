@@ -57,7 +57,6 @@ class RouteParser(object):
         list_route_descriptions = []
         tree = ET.parse(route_filename)
         for route in tree.iter("route"):
-
             route_id = route.attrib["id"]
             print("route_id: ", route_id)
             if single_route_id and route_id != single_route_id:
@@ -83,8 +82,6 @@ class RouteParser(object):
 
             list_route_descriptions.append(new_config)
 
-        print("list_route_descriptions: ", list_route_descriptions)
-
         return list_route_descriptions
 
     @staticmethod
@@ -96,13 +93,11 @@ class RouteParser(object):
 
         route_weather = route.find("weather")
         if route_weather is None:
-
             weather = carla.WeatherParameters(sun_altitude_angle=70, cloudiness=30)
 
         else:
             weather = carla.WeatherParameters()
             for weather_attrib in route.iter("weather"):
-
                 if "cloudiness" in weather_attrib.attrib:
                     weather.cloudiness = float(weather_attrib.attrib["cloudiness"])
                 if "precipitation" in weather_attrib.attrib:
