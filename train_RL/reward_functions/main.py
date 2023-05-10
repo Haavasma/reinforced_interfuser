@@ -47,7 +47,7 @@ def reward_function(state: WorldState) -> Tuple[float, bool]:
 
     # Angle reward
     ego_vehicle_location = state.ego_vehicle_state.privileged.transform.location
-    waypoints = state.scenario_state.global_plan_world_coord
+    waypoints = state.scenario_state.global_plan_world_coord_privileged
 
     closest_waypoint_index, distance_diff = _get_closest_waypoint(
         ego_vehicle_location, waypoints
@@ -65,7 +65,7 @@ def reward_function(state: WorldState) -> Tuple[float, bool]:
     )
     angle_reward = _calculate_angle_reward(angle_diff)
     if angle_reward < 0:
-        return -1, False
+        return -50, True
 
     # Distance reward
     distance_reward = _calculate_distance_reward(distance_diff)
