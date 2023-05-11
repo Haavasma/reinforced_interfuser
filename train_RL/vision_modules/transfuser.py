@@ -1,6 +1,8 @@
 from typing import List
 
 import cv2
+from episode_manager.agent_handler.models import CarConfiguration
+from episode_manager.agent_handler.models.transform import Location, Rotation, Transform
 import numpy as np
 import pygame
 import torch
@@ -21,6 +23,40 @@ class TransfuserVisionModule(VisionModule):
         self.output_shape = (256,)
         self.high = 1
         self.low = 0
+
+    @staticmethod
+    def get_car_config() -> CarConfiguration:
+        return CarConfiguration(
+            "tesla",
+            [
+                {
+                    "height": 300,
+                    "width": 400,
+                    "fov": 100,
+                    "transform": Transform(Location(1.3, 0, 2.3), Rotation(0, -60, 0)),
+                },
+                {
+                    "height": 600,
+                    "width": 800,
+                    "fov": 100,
+                    "transform": Transform(Location(1.3, 0, 2.3), Rotation(0, 0, 0)),
+                },
+                {
+                    "height": 300,
+                    "width": 400,
+                    "fov": 100,
+                    "transform": Transform(Location(1.3, 0, 2.3), Rotation(0, 60, 0)),
+                },
+            ],
+            {
+                "enabled": True,
+                "channels": 64,
+                "range": 85,
+                "shape": (3, 256, 256),
+                "points_per_second": 300000,
+                "transform": Transform(Location(1.3, 0, 2.5), Rotation(0, 90, 0)),
+            },
+        )
 
     def __call__(self, world_state: WorldState) -> np.ndarray:
         rgb = self._parse_images(world_state.ego_vehicle_state.sensor_data.images)

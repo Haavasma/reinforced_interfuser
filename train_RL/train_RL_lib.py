@@ -26,8 +26,9 @@ from ray.rllib.algorithms.ppo import PPO
 from ray.tune.registry import register_env
 
 from config import GlobalConfig
-from episode_configs import baseline_config
+from episode_configs import baseline_config, interfuser_config
 from reward_functions.main import reward_function
+from vision_modules.interfuser import InterFuserVisionModule
 from vision_modules.transfuser import TransfuserVisionModule, setup_transfuser_backbone
 
 
@@ -178,12 +179,12 @@ def train(config: TrainingConfig) -> None:
         seed=69,
     )
 
-    print("STEERING ACTIONS: ", carla_config["steering_actions"])
-
     name = "carla_env"
     register_env(name, create_env)
 
     trainer_config = APPOConfig()  # if config["workers"] > 1 else PPOConfig()
+
+    gpu_fraction = gpus / (workers + 1)
 
     algo_config = (
         trainer_config.rollouts(
@@ -197,7 +198,11 @@ def train(config: TrainingConfig) -> None:
             worker_restore_timeout_s=60,
             num_consecutive_worker_failures_tolerance=0,
         )
-        .resources(num_gpus=config["gpus"])
+        .resources(
+            num_gpus=gpu_fraction,
+            num_cpus_per_worker=1,
+            num_gpus_per_worker=gpu_fraction,
+        )
         .environment(name)
         .training(gamma=0.95, lr=1e-4)
         .framework("torch")
@@ -269,12 +274,6 @@ def make_carla_env(
         i = env_config.worker_index - 1
         print("WORKER INDEX: ", i)
         episode_config = baseline_config()
-        episode_config.training_type = (
-            TrainingType.EVALUATION if evaluation else TrainingType.TRAINING
-        )
-        time.sleep(5 * i)
-        episode_manager = EpisodeManager(episode_config, gpu_device=i % gpus)
-        speed_controller = TestSpeedController()
 
         vision_module = None
 
@@ -284,9 +283,18 @@ def make_carla_env(
                 config, weights_file, device=f"cuda:{i%gpus}"
             )
             vision_module = TransfuserVisionModule(backbone, config)
+        elif vision_module_name == "interfuser":
+            vision_module = InterFuserVisionModule(
+                weights_file, use_target_feature=True, render_imitation=False
+            )
+            episode_config = interfuser_config()
 
-        elif vision_module == "interfuser":
-            raise NotImplementedError("Interfuser not implemented yet")
+        episode_config.training_type = (
+            TrainingType.EVALUATION if evaluation else TrainingType.TRAINING
+        )
+        time.sleep(5 * i)
+        episode_manager = EpisodeManager(episode_config, gpu_device=i % gpus)
+        speed_controller = TestSpeedController()
 
         env = CarlaEnvironment(
             carla_config,
@@ -386,7 +394,7 @@ if __name__ == "__main__":
         "--vision-module",
         type=str,
         default="",
-        help="Vision module (default: None)",
+        help="Vision module, (transfuser, interfuser) (default: None)",
     )
 
     parser.add_argument("--steps", type=int, default=1_000_000, help="Number of steps")

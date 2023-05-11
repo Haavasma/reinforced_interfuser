@@ -5,6 +5,7 @@ from episode_manager.episode_manager import (
     Rotation,
     Transform,
 )
+from ray.rllib.evaluation.episode import Episode
 
 
 _transfuser_img_size = (960, 480)
@@ -39,10 +40,15 @@ TRANSFUSER_CONFIG = EpisodeManagerConfiguration(
             "channels": 32,
             "range": 5000,
             "shape": (3, 256, 256),
+            "points_per_second": 600000,
             "transform": Transform(Location(1.3, 0, 2.5), Rotation(0, -90, 0)),
         },
     ),
 )
+
+
+def interfuser_config() -> EpisodeManagerConfiguration:
+    return EpisodeManagerConfiguration()
 
 
 _baseline_image_size = (84, 84)
@@ -75,10 +81,11 @@ def baseline_config() -> EpisodeManagerConfiguration:
             ],
             {
                 "enabled": False,
-                "channels": 32,
-                "range": 5000,
+                "channels": 64,
+                "range": 85,
                 "shape": (3, 256, 256),
-                "transform": Transform(Location(1.3, 0, 2.5), Rotation(0, -90, 0)),
+                "points_per_second": 300000,
+                "transform": Transform(Location(1.3, 0, 2.5), Rotation(0, 90, 0)),
             },
         ),
     )
