@@ -1145,6 +1145,7 @@ class Interfuser(nn.Module):
             waypoint_probs,
             traffic_feature,
             target_feature,
+            waypoints_feature[:, 0],
         )
 
 
