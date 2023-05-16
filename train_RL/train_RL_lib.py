@@ -54,8 +54,6 @@ class CustomCallback(DefaultCallbacks):
         # Collect all metrics and average them on the environments
         metrics = {}
         n_sub_envs = len(base_env.get_sub_environments())
-        print("N_SUB_ENVS: ", n_sub_envs)
-
         for env in base_env.get_sub_environments():
             for key, value in env.metrics.items():
                 if key in metrics:
@@ -226,7 +224,7 @@ def train(config: TrainingConfig) -> None:
 
     trainer_config = APPOConfig()  # if config["workers"] > 1 else PPOConfig()
 
-    gpu_fraction = 1 / (workers + 2)
+    gpu_fraction = (1 / (workers + 1)) - 0.01
 
     algo_config = (
         trainer_config.rollouts(
