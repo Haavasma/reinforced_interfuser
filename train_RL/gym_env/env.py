@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 import random
 import time
-from typing import Callable, List, Optional, Protocol, Set, Tuple, TypedDict
+from typing import Any, Callable, List, Optional, Protocol, Set, Tuple, TypedDict
+import typing
 from episode_manager.renderer import WorldStateRenderer, generate_pygame_surface
 
 from collections import deque
@@ -9,7 +10,7 @@ import gymnasium as gym
 import numpy as np
 import pygame
 from episode_manager import EpisodeManager
-from episode_manager.episode_manager import Action, WorldState
+from episode_manager.episode_manager import Action, WorldState, ScenarioData
 from gymnasium.spaces import Box, Dict, Discrete
 from gymnasium.utils import seeding
 from srunner.tools.route_parser import RoadOption
@@ -49,6 +50,9 @@ class VisionModule(Protocol):
         """
         raise NotImplementedError
 
+    def set_global_plan(self, global_plan: List[Any]):
+        raise NotImplementedError
+
 
 class CarlaEnvironmentConfiguration(TypedDict):
     continuous_speed_range: Tuple[float, float]
@@ -68,7 +72,7 @@ def default_config() -> CarlaEnvironmentConfiguration:
         "speed_goal_actions": [],
         "steering_actions": [],
         "discrete_actions": True,
-        "towns": ["Town01", "Town03", "Town04"],
+        "towns": ["Town01", "Town03", "Town04", "Town06"],
         "town_change_frequency": 10,
         "concat_images": False,
     }
@@ -194,7 +198,7 @@ class CarlaEnvironment(gym.Env):
     config: CarlaEnvironmentConfiguration
     carla_manager: EpisodeManager
     vision_module: Optional[VisionModule]
-    reward_function: Callable[[WorldState], Tuple[float, bool]]
+    reward_function: Callable[[WorldState, ScenarioData], Tuple[float, bool]]
     speed_controller: PIDController
 
     def __post_init__(self):
@@ -203,6 +207,7 @@ class CarlaEnvironment(gym.Env):
         """
         self.time = time.time()
         self._renderer = None
+        self._metrics: typing.Dict[str, Any] = {}
         self._n_episodes = 0
         self._steps = 0
         self._town = random.choice(self.config["towns"])
@@ -242,6 +247,10 @@ class CarlaEnvironment(gym.Env):
         self.observation_space = Dict(spaces=observation_space_dict)
 
         return
+
+    @property
+    def metrics(self) -> typing.Dict[str, Any]:
+        return self._metrics
 
     def _set_observation_space_without_vision(self) -> dict:
         observation_space_dict = {}
@@ -299,13 +308,15 @@ class CarlaEnvironment(gym.Env):
         if self._n_episodes % self.config["town_change_frequency"] == 0:
             self._town = random.choice(self.config["towns"])
 
-        self.carla_manager.stop_episode()
-        self.state = self.carla_manager.start_episode(town=self._town)
+        self._metrics = self.carla_manager.stop_episode()
+        self.state, self.data = self.carla_manager.start_episode(town=self._town)
 
         self._route_planner = RoutePlanner()
-        self._route_planner.set_route(self.state.scenario_state.global_plan, True)
+        self._route_planner.set_route(self.data.global_plan, True)
+        if self.vision_module is not None:
+            self.vision_module.set_global_plan(self.data.global_plan)
 
-        return self._get_obs(), {}
+        return self._get_obs(), self._metrics
 
     def render(self, mode="human") -> Optional[np.ndarray]:
         if mode == "human":
@@ -342,12 +353,8 @@ class CarlaEnvironment(gym.Env):
         if self.vision_module is None:
             raise ValueError("Vision module is not set")
 
-        print("SETTING UP OBSERVATION STATE")
         observation = self._setup_observation_state()
-
-        start_time = time.time()
         vision_encoding = self.vision_module(self.state)
-        print("TIME TO GET VISION ENCODING: ", time.time() - start_time)
 
         # print("VISION ENCODING: ", vision_encoding)
         # print("SHAPE: ", vision_encoding.shape)
@@ -443,9 +450,9 @@ class CarlaEnvironment(gym.Env):
         # update state with result of using the new action
         self.state = self.carla_manager.step(new_action)
 
-        reward, done = self.reward_function(self.state)
+        reward, done = self.reward_function(self.state, self.data)
 
-        result = (self._get_obs(), reward, done, False, {})
+        result = (self._get_obs(), reward, done or self.state.done, False, {})
         self.time = time.time()
 
         return result

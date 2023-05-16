@@ -1,15 +1,23 @@
 import argparse
 import os
+import pathlib
 import pickle
 import uuid
 import time
-from typing import Any, Callable, List, TypedDict, Union
+import copy
+from typing import Any, Callable, Dict, List, TypedDict, Union
 
 import gymnasium as gym
 from typing import Optional
 import numpy as np
 from episode_manager import EpisodeManager
 from episode_manager.episode_manager import TrainingType
+from ray.rllib.env.base_env import BaseEnv
+from ray.rllib.evaluation import RolloutWorker
+from ray.rllib.evaluation.episode import Episode
+from ray.rllib.evaluation.episode_v2 import EpisodeV2
+from ray.rllib.policy import Policy
+from ray.rllib.utils.typing import PolicyID
 from gym_env.env import (
     CarlaEnvironment,
     CarlaEnvironmentConfiguration,
@@ -32,13 +40,42 @@ from vision_modules.interfuser import InterFuserVisionModule
 from vision_modules.transfuser import TransfuserVisionModule, setup_transfuser_backbone
 
 
-class CustomLogger(tune.Callback):
-    def on_train_result(self, *, algorithm: Algorithm, result: dict, **kwargs) -> None:
-        print("Training result: ", result)
+class CustomCallback(DefaultCallbacks):
+    def on_episode_start(
+        self,
+        *,
+        worker: RolloutWorker,
+        base_env: BaseEnv,
+        policies: Dict[PolicyID, Policy],
+        episode: Union[Episode, EpisodeV2, Exception],
+        env_index: Optional[int] = None,
+        **kwargs,
+    ) -> None:
+        # Collect all metrics and average them on the environments
+        metrics = {}
+        n_sub_envs = len(base_env.get_sub_environments())
+        print("N_SUB_ENVS: ", n_sub_envs)
 
-    def on_episode_end(self, worker, base_env, policies, episode, **kwargs):
-        print("EPISODE: ", episode)
-        print("WORKER: ", worker)
+        for env in base_env.get_sub_environments():
+            for key, value in env.metrics.items():
+                if key in metrics:
+                    metrics[key] += value
+                else:
+                    metrics[key] = value
+
+        for key, value in metrics.items():
+            episode.custom_metrics[key] = value / n_sub_envs
+
+        print("CUSTOM METRICS: ", episode.custom_metrics)
+
+        return super().on_episode_end(
+            worker=worker,
+            base_env=base_env,
+            policies=policies,
+            episode=episode,
+            env_index=env_index,
+            **kwargs,
+        )
 
 
 class CustomPPO(PPO):
@@ -166,13 +203,18 @@ def train(config: TrainingConfig) -> None:
         "discrete_actions": True,
         "continuous_speed_range": (0.0, 6.0),
         "continuous_steering_range": (-0.3, 0.3),
-        "towns": ["Town01"],
+        "towns": ["Town01", "Town03", "Town04", "Town06"],
         "town_change_frequency": 10,
         "concat_images": True,
     }
 
+    eval_config: CarlaEnvironmentConfiguration = copy.deepcopy(carla_config)
+    eval_config["towns"] = ["Town02", "Town04", "Town05"]
+    eval_config["town_change_frequency"] = 1
+
     create_env = make_carla_env(
         carla_config,
+        eval_config,
         config["gpus"],
         config["vision_module"],
         config["weights"],
@@ -184,7 +226,7 @@ def train(config: TrainingConfig) -> None:
 
     trainer_config = APPOConfig()  # if config["workers"] > 1 else PPOConfig()
 
-    gpu_fraction = gpus / (workers + 1)
+    gpu_fraction = 1 / (workers + 2)
 
     algo_config = (
         trainer_config.rollouts(
@@ -200,11 +242,17 @@ def train(config: TrainingConfig) -> None:
         )
         .resources(
             num_gpus=gpu_fraction,
-            num_cpus_per_worker=1,
             num_gpus_per_worker=gpu_fraction,
         )
         .environment(name)
         .training(gamma=0.95, lr=1e-4)
+        # .evaluation(
+        #     evaluation_interval=50,
+        #     evaluation_parallel_to_training=workers > 1,
+        #     evaluation_num_episodes=5,
+        #     evaluation_num_workers=1 if workers > 1 else 0,
+        # )
+        .callbacks(CustomCallback)
         .framework("torch")
     )
 
@@ -264,17 +312,20 @@ def train(config: TrainingConfig) -> None:
 
 def make_carla_env(
     carla_config: CarlaEnvironmentConfiguration,
+    eval_config: CarlaEnvironmentConfiguration,
     gpus: int,
     vision_module_name: str,
     weights_file: str,
     seed: int = 0,
-    evaluation: bool = False,
 ) -> Callable[[Any], gym.Env]:
     def _init(env_config) -> gym.Env:
         i = env_config.worker_index - 1
-        print("WORKER INDEX: ", i)
-        episode_config = baseline_config()
 
+        print("WORKER INDEX: ", i)
+        # Worker gets index 0 if it is the evaluator
+        evaluation = i < 0
+
+        episode_config = baseline_config()
         vision_module = None
 
         if vision_module_name == "transfuser":
@@ -292,12 +343,12 @@ def make_carla_env(
         episode_config.training_type = (
             TrainingType.EVALUATION if evaluation else TrainingType.TRAINING
         )
-        time.sleep(5 * i)
+        time.sleep(5 * (i + 1))
         episode_manager = EpisodeManager(episode_config, gpu_device=i % gpus)
         speed_controller = TestSpeedController()
 
         env = CarlaEnvironment(
-            carla_config,
+            eval_config if evaluation else carla_config,
             episode_manager,
             vision_module,
             reward_function,
@@ -407,6 +458,8 @@ if __name__ == "__main__":
 
     gpus = args.gpus
 
+    weights = str(pathlib.Path(args.weights).absolute().resolve())
+
     _ = [x.strip() for x in "".split(",")]
 
     train(
@@ -415,7 +468,7 @@ if __name__ == "__main__":
             "gpus": gpus,
             "resume": bool(args.resume),
             "vision_module": args.vision_module,
-            "weights": args.weights,
+            "weights": weights,
             "eval": True,
             "steps": 1_000_000,
         }

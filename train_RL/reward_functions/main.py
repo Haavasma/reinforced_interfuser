@@ -4,7 +4,7 @@ from typing import Any, List, Tuple
 from PIL.PngImagePlugin import o8
 
 from episode_manager.agent_handler.models import Location, Transform
-from gym_env.env import WorldState
+from gym_env.env import WorldState, ScenarioData
 
 
 @dataclass
@@ -21,7 +21,7 @@ class Reward:
         return (self.speed_reward + self.angle_reward + self.distance_reward) / 3
 
 
-def reward_function(state: WorldState) -> Tuple[float, bool]:
+def reward_function(state: WorldState, data: ScenarioData) -> Tuple[float, bool]:
     # Speed reward
     dist_to_hazard = closest_hazard(state)
     speed_limit = 6.0
@@ -31,7 +31,7 @@ def reward_function(state: WorldState) -> Tuple[float, bool]:
         print("COLLISION")
         return -100, True
 
-    if state.scenario_state.done:
+    if state.done:
         return 1, True
 
     desired_speed = calculate_desired_speed(speed_limit, dist_to_hazard)
@@ -47,7 +47,7 @@ def reward_function(state: WorldState) -> Tuple[float, bool]:
 
     # Angle reward
     ego_vehicle_location = state.ego_vehicle_state.privileged.transform.location
-    waypoints = state.scenario_state.global_plan_world_coord_privileged
+    waypoints = data.global_plan_world_coord_privileged
 
     closest_waypoint_index, distance_diff = _get_closest_waypoint(
         ego_vehicle_location, waypoints

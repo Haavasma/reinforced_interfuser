@@ -1,36 +1,27 @@
-from typing import Tuple
-from gym_env.env import VisionModule, WorldState
-from episode_manager.episode_manager import Action, WorldState
-import torch
-import os
-import json
 import datetime
+import math
+import os
 import pathlib
 import time
-import imp
-import cv2
-import carla
 from collections import deque
+from typing import Tuple
 
-import torch
 import carla
+import cv2
 import numpy as np
-from PIL import Image
-from easydict import EasyDict
-
-from torchvision import transforms
+import pygame
+import torch
+from episode_manager.episode_manager import Action, WorldState
+from gym_env.env import VisionModule, WorldState
 from leaderboard.autoagents import autonomous_agent
-from timm.models import create_model
-from team_code.utils import lidar_to_histogram_features, transform_2d_points
-from team_code.planner import RoutePlanner
+from PIL import Image
+from team_code.interfuser_config import GlobalConfig
 from team_code.interfuser_controller import InterfuserController
+from team_code.planner import RoutePlanner
 from team_code.render import render, render_self_car, render_waypoints
 from team_code.tracker import Tracker
-from team_code.interfuser_config import GlobalConfig
-
-
-import math
-import yaml
+from timm.models import create_model
+from torchvision import transforms
 
 SAVE_PATH = None
 IMAGENET_DEFAULT_MEAN = (0.485, 0.456, 0.406)
@@ -118,7 +109,7 @@ class InterFuserVisionModule(VisionModule):
 
         return
 
-    def _init(self, global_plan):
+    def set_global_plan(self, global_plan):
         self._route_planner = RoutePlanner(4.0, 50.0)
         self._route_planner.set_route(global_plan, True)
         self.initialized = True
@@ -154,7 +145,7 @@ class InterFuserVisionModule(VisionModule):
         speed = vehicle_state.speed
         compass = vehicle_state.compass
         if (
-            math.isnan(compass) == True
+            math.isnan(compass) is True
         ):  # It can happen that the compass sends nan for a few frames
             compass = 0.0
 
@@ -197,9 +188,6 @@ class InterFuserVisionModule(VisionModule):
 
     @torch.no_grad()
     def __call__(self, world_state: WorldState, postprocess=True):
-        if not self.initialized:
-            self._init(world_state.scenario_state.global_plan)
-
         self.step += 1
         # if self.step % self.skip_frames != 0 and self.step > 4:
         #     return self.prev_control
@@ -436,8 +424,8 @@ class InterFuserVisionModule(VisionModule):
         else:
             return action
 
-    def _render(self):
-        return
+    def get_auxilliary_render(self) -> pygame.Surface:
+        return super().get_auxilliary_render()
 
 
 def create_carla_rgb_transform(
@@ -488,9 +476,9 @@ class DisplayInterface(object):
 
     def run_interface(self, input_data):
         rgb = input_data["rgb"]
-        rgb_left = input_data["rgb_left"]
-        rgb_right = input_data["rgb_right"]
-        rgb_focus = input_data["rgb_focus"]
+        input_data["rgb_left"]
+        input_data["rgb_right"]
+        input_data["rgb_focus"]
         map = input_data["map"]
         surface = np.zeros((600, 1200, 3), np.uint8)
         surface[:, :800] = rgb
