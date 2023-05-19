@@ -45,7 +45,7 @@ from vision_modules.interfuser import InterFuserVisionModule
 from vision_modules.transfuser import TransfuserVisionModule, setup_transfuser_backbone
 
 
-N_EPISODES_PER_VIDEO_ITERATION = 1
+N_EPISODES_PER_VIDEO_ITERATION = 5
 
 
 # class VideoUploader(tune.Callback):
