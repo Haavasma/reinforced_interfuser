@@ -200,13 +200,14 @@ class CarlaEnvironment(gym.Env):
     vision_module: Optional[VisionModule]
     reward_function: Callable[[WorldState, ScenarioData], Tuple[float, bool]]
     speed_controller: PIDController
+    render_mode: str = "rgb_array"
 
     def __post_init__(self):
         """
         Sets up action and observation space based on configurations
         """
         self.time = time.time()
-        self._renderer = None
+        self._renderer = WorldStateRenderer()
         self._metrics: typing.Dict[str, Any] = {}
         self._n_episodes = 0
         self._steps = 0
@@ -214,6 +215,7 @@ class CarlaEnvironment(gym.Env):
         self.amount_of_speed_actions = len(self.config["speed_goal_actions"])
         self.amount_of_steering_actions = len(self.config["steering_actions"])
         self._route_planner: Optional[RoutePlanner] = None
+        self.metadata["render_fps"] = 10
 
         print("INITIALIZING ENVIRONMENT")
 
@@ -318,16 +320,23 @@ class CarlaEnvironment(gym.Env):
 
         return self._get_obs(), self._metrics
 
-    def render(self, mode="human") -> Optional[np.ndarray]:
+    def render(self, mode="computer") -> Optional[np.ndarray]:
         if mode == "human":
             if self._renderer is None:
                 self._renderer = WorldStateRenderer()
 
             self._renderer.render(self.state)
             return None
+        elif mode == "vision_module" and self.vision_module is not None:
+            surface = np.array(self.vision_module.get_auxilliary_render())
+            return surface
+            # return np.transpose(np.array(surface), axes=(1, 0, 2))
+
         else:
             pygame_surface = generate_pygame_surface(self.state)
-            return np.transpose(np.array(pygame_surface), axes=(1, 0, 2))
+            np_array = pygame.surfarray.array3d(pygame_surface).swapaxes(0, 1)
+
+            return np_array
 
     def _get_obs(self):
         return (

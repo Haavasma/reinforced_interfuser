@@ -50,7 +50,11 @@ class InterFuserVisionModule(VisionModule):
         self.render_imitation = render_imitation
         self.postprocess = postprocess
 
-        self._hic = DisplayInterface() if self.render_imitation else None
+        self.throttle = 0.0
+        self.brake = 1.0
+        self.steer = 0.0
+
+        self._hic = DisplayInterface(should_render_live=self.render_imitation)
         self.lidar_processed = list()
         self.track = autonomous_agent.Track.SENSORS
         self.step = -1
@@ -277,9 +281,17 @@ class InterFuserVisionModule(VisionModule):
         return gps
 
     def postprocess_action(self, action: Action) -> Action:
-        if not self.postprocess and not self.render_imitation:
+        if self.postprocess:
+            return Action(
+                throttle=self.throttle,
+                steer=action.steer,
+                brake=action.brake,
+                reverse=action.reverse,
+            )
+        else:
             return action
 
+    def get_auxilliary_render(self) -> pygame.Surface:
         if self.step % 2 == 0 or self.step < 4:
             traffic_meta = self.tracker.update_and_predict(
                 self.traffic_meta.reshape(20, 20, -1),
@@ -292,11 +304,11 @@ class InterFuserVisionModule(VisionModule):
                 self.momentum * self.traffic_meta_moving_avg
                 + (1 - self.momentum) * traffic_meta
             )
-        traffic_meta = self.traffic_meta_moving_avg
-        self.tick_data["raw"] = traffic_meta
+        self.traffic_meta = self.traffic_meta_moving_avg
+        self.tick_data["raw"] = self.traffic_meta
         self.tick_data["bev_feature"] = self.bev_feature
 
-        steer, throttle, brake, meta_infos = self.controller.run_step(
+        steer, throttle, brake, self.meta_infos = self.controller.run_step(
             self.velocity,
             self.pred_waypoints,
             self.is_junction,
@@ -310,13 +322,15 @@ class InterFuserVisionModule(VisionModule):
         if brake > 0.1:
             throttle = 0.0
 
-        control = carla.VehicleControl()
-        control.steer = float(steer)
-        control.throttle = float(throttle)
-        control.brake = float(brake)
+        self.throttle = throttle
+        self.brake = brake
+        self.steer = steer
 
+        self.control = carla.VehicleControl(
+            throttle=throttle, steer=steer, brake=brake, reverse=False
+        )
         surround_map, box_info = render(
-            traffic_meta.reshape(20, 20, 7), pixels_per_meter=20
+            self.traffic_meta.reshape(20, 20, 7), pixels_per_meter=20
         )
         surround_map = surround_map[:400, 160:560]
         surround_map = np.stack([surround_map, surround_map, surround_map], 2)
@@ -334,7 +348,7 @@ class InterFuserVisionModule(VisionModule):
         for i in range(10):
             if (
                 pred_waypoints[i, 0] ** 2 + pred_waypoints[i, 1] ** 2
-                > (meta_infos[3] + 0.5) ** 2
+                > (self.meta_infos[3] + 0.5) ** 2
             ):
                 safe_index = i
                 break
@@ -357,7 +371,7 @@ class InterFuserVisionModule(VisionModule):
         ).astype(np.uint8)
 
         map_t1, box_info = render(
-            traffic_meta.reshape(20, 20, 7), pixels_per_meter=20, t=1
+            self.traffic_meta.reshape(20, 20, 7), pixels_per_meter=20, t=1
         )
         map_t1 = map_t1[:400, 160:560]
         map_t1 = np.stack([map_t1, map_t1, map_t1], 2)
@@ -366,7 +380,7 @@ class InterFuserVisionModule(VisionModule):
         ).astype(np.uint8)
         map_t1 = cv2.resize(map_t1, (200, 200))
         map_t2, box_info = render(
-            traffic_meta.reshape(20, 20, 7), pixels_per_meter=20, t=2
+            self.traffic_meta.reshape(20, 20, 7), pixels_per_meter=20, t=2
         )
         map_t2 = map_t2[:400, 160:560]
         map_t2 = np.stack([map_t2, map_t2, map_t2], 2)
@@ -376,9 +390,9 @@ class InterFuserVisionModule(VisionModule):
         map_t2 = cv2.resize(map_t2, (200, 200))
 
         if self.step % 2 != 0 and self.step > 4:
-            control = self.prev_control
+            self.control = self.prev_control
         else:
-            self.prev_control = control
+            self.prev_control = self.control
             self.prev_surround_map = surround_map
 
         self.tick_data["map"] = self.prev_surround_map
@@ -397,11 +411,12 @@ class InterFuserVisionModule(VisionModule):
             self.tick_data["rgb_raw"][244:356, 344:456], (150, 150)
         )
         self.tick_data["control"] = "throttle: %.2f, steer: %.2f, brake: %.2f" % (
-            control.throttle,
-            control.steer,
-            control.brake,
+            self.throttle,
+            self.steer,
+            self.brake,
         )
-        self.tick_data["meta_infos"] = meta_infos
+
+        self.tick_data["meta_infos"] = self.meta_infos
         self.tick_data["box_info"] = "car: %d, bike: %d, pedestrian: %d" % (
             box_info["car"],
             box_info["bike"],
@@ -409,23 +424,10 @@ class InterFuserVisionModule(VisionModule):
         )
         self.tick_data["mes"] = "speed: %.2f" % self.velocity
         self.tick_data["time"] = "time: %.3f" % time.time()
-        if self.render_imitation and self._hic is not None:
-            surface = self._hic.run_interface(self.tick_data)
+        surface = self._hic.run_interface(self.tick_data)
         self.tick_data["surface"] = surface
-        # Do something with the new found control
 
-        if self.postprocess:
-            return Action(
-                throttle=throttle,
-                steer=action.steer,
-                brake=brake,
-                reverse=action.reverse,
-            )
-        else:
-            return action
-
-    def get_auxilliary_render(self) -> pygame.Surface:
-        return super().get_auxilliary_render()
+        return surface
 
 
 def create_carla_rgb_transform(
@@ -461,18 +463,23 @@ def create_carla_rgb_transform(
 
 
 class DisplayInterface(object):
-    def __init__(self):
+    def __init__(self, should_render_live: bool = False):
         self._width = 1200
         self._height = 600
         self._surface = None
 
-        pygame.init()
-        pygame.font.init()
+        self._should_render_live = should_render_live
+        if self._should_render_live == "human":
+            pygame.init()
+            pygame.font.init()
+
         self._clock = pygame.time.Clock()
-        self._display = pygame.display.set_mode(
-            (self._width, self._height), pygame.HWSURFACE | pygame.DOUBLEBUF
-        )
-        pygame.display.set_caption("Human Agent")
+        if self._should_render_live:
+            self._display = pygame.display.set_mode(
+                (self._width, self._height), pygame.HWSURFACE | pygame.DOUBLEBUF
+            )
+
+            pygame.display.set_caption("Human Agent")
 
     def run_interface(self, input_data):
         rgb = input_data["rgb"]
@@ -597,11 +604,13 @@ class DisplayInterface(object):
 
         # display image
         self._surface = pygame.surfarray.make_surface(surface.swapaxes(0, 1))
-        if self._surface is not None:
-            self._display.blit(self._surface, (0, 0))
 
-        pygame.display.flip()
-        pygame.event.get()
+        if self._should_render_live:
+            if self._surface is not None:
+                self._display.blit(self._surface, (0, 0))
+            pygame.display.flip()
+            pygame.event.get()
+
         return surface
 
     def _quit(self):

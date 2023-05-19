@@ -1,4 +1,5 @@
 import argparse
+import glob
 import os
 import pathlib
 import pickle
@@ -17,7 +18,11 @@ from ray.rllib.evaluation import RolloutWorker
 from ray.rllib.evaluation.episode import Episode
 from ray.rllib.evaluation.episode_v2 import EpisodeV2
 from ray.rllib.policy import Policy
-from ray.rllib.utils.typing import PolicyID
+from ray.rllib.policy.sample_batch import SampleBatch
+from ray.rllib.utils.typing import PolicyID, ResultDict
+from ray.tune.experiment import Trial
+from ray.tune.experiment.trial import Trial
+import wandb
 from gym_env.env import (
     CarlaEnvironment,
     CarlaEnvironmentConfiguration,
@@ -26,7 +31,7 @@ from gym_env.env import (
 from gymnasium.wrappers.monitoring.video_recorder import VideoRecorder
 from ray import tune
 from ray.air.checkpoint import Checkpoint
-from ray.air.integrations.wandb import WandbLoggerCallback
+from ray.air.integrations.wandb import WandbLoggerCallback, _QueueItem
 from ray.rllib.algorithms.algorithm import Algorithm
 from ray.rllib.algorithms.appo import APPO, APPOConfig
 from ray.rllib.algorithms.callbacks import DefaultCallbacks
@@ -40,14 +45,70 @@ from vision_modules.interfuser import InterFuserVisionModule
 from vision_modules.transfuser import TransfuserVisionModule, setup_transfuser_backbone
 
 
+N_EPISODES_PER_VIDEO_ITERATION = 1
+
+
+# class VideoUploader(tune.Callback):
+#     def on_step_end(self, iteration: int, trials: List[Trial], **info):
+#         videos = glob.glob("./videos/*.mp4")
+#
+#         print("VIDEOS: ", videos)
+#         for video in videos:
+#             print("LOGGING VIDEO: ", video)
+#             wandb.log({"video": wandb.Video(video)})
+#
+#         for video in videos:
+#             os.remove(video)
+#
+#         return super().on_step_end(iteration, trials, **info)
+
+
+class CustomWandbLoggerCallback(WandbLoggerCallback):
+    def log_trial_result(self, iteration: int, trial: Trial, result: Dict):
+        videos = glob.glob("./videos/*.mp4")
+        videos.sort()
+        if len(videos) > 0:
+            for video in videos:
+                # move videos to trial specific folder
+                video_name = os.path.basename(video)
+                video_path = os.path.join(str(trial.logdir), "videos", video_name)
+                pathlib.Path(os.path.dirname(video_path)).mkdir(
+                    parents=True, exist_ok=True
+                )
+
+                print(f"MOVING {video} to {video_path}")
+                os.rename(video, video_path)
+                self._trial_queues[trial].put(
+                    (_QueueItem.VIDEO, wandb.Video(video_path, fps=10, format="mp4"))
+                )
+
+        return super().log_trial_result(iteration, trial, result)
+
+    # def on_trial_save(self, iteration: int, trials: List[Trial], trial: Trial, **info):
+    #     print("UPLOADING VIDEOS")
+    #     videos = glob.glob("./videos/*.mp4")
+    #
+    #     for video in videos:
+    #         self._trial_queues[trial].put(
+    #             (_QueueItem.RESULT, {"video": wandb.Video(video)})
+    #         )
+    #
+    #     return super().on_trial_save(iteration, trials, trial, **info)
+
+    # def on_step_end(self, iteration: int, trials: List[Trial], **info):
+    #     return super().on_step_end(iteration, trials, **info)
+
+
 class CustomCallback(DefaultCallbacks):
+    episode_iteration: Dict[int, int] = {}
+
     def on_episode_start(
         self,
         *,
         worker: RolloutWorker,
         base_env: BaseEnv,
         policies: Dict[PolicyID, Policy],
-        episode: Union[Episode, EpisodeV2, Exception],
+        episode: Union[Episode, EpisodeV2],
         env_index: Optional[int] = None,
         **kwargs,
     ) -> None:
@@ -64,7 +125,54 @@ class CustomCallback(DefaultCallbacks):
         for key, value in metrics.items():
             episode.custom_metrics[key] = value / n_sub_envs
 
-        print("CUSTOM METRICS: ", episode.custom_metrics)
+        index = env_index if env_index is not None else 0
+
+        iteration = self.episode_iteration.get(index, 0)
+
+        if iteration % N_EPISODES_PER_VIDEO_ITERATION == 0:
+            if not hasattr(self, "video_recorder"):
+                self.video_recorder = None
+
+            if self.video_recorder is None:
+                env = base_env.get_sub_environments()[index]
+                self.video_recorder = VideoRecorder(
+                    env,
+                    base_path=os.path.join(
+                        "./videos/", f"{int(time.time())}_{uuid.uuid4()}"
+                    ),
+                )
+
+        if index in self.episode_iteration:
+            self.episode_iteration[index] += 1
+        else:
+            self.episode_iteration[index] = 1
+
+        return super().on_episode_start(
+            worker=worker,
+            base_env=base_env,
+            policies=policies,
+            episode=episode,
+            env_index=env_index,
+            **kwargs,
+        )
+
+    def on_episode_step(self, worker, base_env, episode, env_index, **kwargs):
+        if self.video_recorder:
+            base_env.get_sub_environments()[env_index]
+            self.video_recorder.capture_frame()
+
+        return super().on_episode_step(
+            worker=worker,
+            base_env=base_env,
+            episode=episode,
+            env_index=env_index,
+            **kwargs,
+        )
+
+    def on_episode_end(self, worker, base_env, policies, episode, env_index, **kwargs):
+        if self.video_recorder:
+            self.video_recorder.close()
+            self.video_recorder = None
 
         return super().on_episode_end(
             worker=worker,
@@ -137,6 +245,18 @@ class CustomAPPO(APPO):
             pickle.dump(self.evaluation_metrics, f)
 
         return checkpoint_path
+
+    # def after_train_step(self, train_results: ResultDict) -> None:
+    #     # iterate all videos set up in the callback:
+    #     # for each video, log it to wandb
+    #     videos = glob.glob("./videos/*.mp4")
+    #     for video in videos:
+    #         wandb.log({"Train/video": wandb.Video(video)})
+    #
+    #     for video in videos:
+    #         os.remove(video)
+    #
+    #     return super().after_train_step(train_results)
 
     def restore(
         self,
@@ -255,7 +375,6 @@ def train(config: TrainingConfig) -> None:
     )
 
     experiment_dir = os.path.join("./models", run_id)
-
     should_resume = config["resume"]
 
     if should_resume:
@@ -298,7 +417,7 @@ def train(config: TrainingConfig) -> None:
         local_dir="./models/",
         fail_fast="RAISE",
         callbacks=[
-            WandbLoggerCallback(
+            CustomWandbLoggerCallback(
                 project="Sensor fusion AD RL",
                 log_config=True,
                 upload_checkpoints=True,
@@ -334,7 +453,10 @@ def make_carla_env(
             vision_module = TransfuserVisionModule(backbone, config)
         elif vision_module_name == "interfuser":
             vision_module = InterFuserVisionModule(
-                weights_file, use_target_feature=True, render_imitation=False
+                weights_file,
+                use_target_feature=True,
+                render_imitation=False,
+                postprocess=False,
             )
             episode_config = interfuser_config()
 
@@ -359,55 +481,41 @@ def make_carla_env(
     return _init
 
 
-class CustomRLlibCallback(DefaultCallbacks):
-    def on_episode_start(
-        self, worker, base_env, policies, episode, env_index, **kwargs
-    ):
-        if not hasattr(self, "video_recorder"):
-            self.video_recorder = None
-
-        if self.video_recorder is None:
-            env = base_env.get_sub_environments(env_index)
-            self.video_recorder = VideoRecorder(
-                env, base_path=os.path.join(worker.log_dir, "sample_videos")
-            )
-
-    def on_episode_step(self, worker, base_env, episode, env_index, **kwargs):
-        print("ON EPISODE STEP: ", env_index)
-        if self.video_recorder:
-            base_env.get_sub_environments(env_index)
-            self.video_recorder.capture_frame()
-
-    def on_episode_end(self, worker, base_env, policies, episode, env_index, **kwargs):
-        episode.custom_metrics["mean_episode_reward"] = np.mean(
-            episode.batch_builder.policy_batches["default_policy"]["rewards"]
-        )
-        episode.custom_metrics["episode_length"] = len(
-            episode.batch_builder.policy_batches["default_policy"]["rewards"]
-        )
-
-        if self.video_recorder:
-            self.video_recorder.close()
-            self.video_recorder = None
-
-    def on_train_result(self, trainer, result, **kwargs):
-        print("GOT RESULT: ", result["custom_metrics"])
-        result["custom_metrics"]["mean_episode_reward"] = np.mean(
-            [m["mean_episode_reward"] for m in result["hist_stats"]["custom_metrics"]]
-        )
-        result["custom_metrics"]["episode_length"] = np.mean(
-            [m["episode_length"] for m in result["hist_stats"]["custom_metrics"]]
-        )
-
-        if not os.path.exists(os.path.join(trainer.logdir, "sample_videos")):
-            os.makedirs(os.path.join(trainer.logdir, "sample_videos"))
-
-        if self.video_recorder:
-            self.video_recorder.enabled = False
-            trainer.workers.foreach_worker(
-                lambda worker: worker.foreach_env(lambda env: env.close())
-            )
-            self.video_recorder = None
+# class CustomRLlibCallback(DefaultCallbacks):
+#     episode_iteration: int = 0
+#
+#     def __init__(self, n_episodes: int = 20):
+#         self.episode_iteration = 0
+#         self.n_episodes = n_episodes
+#         return super().__init__()
+#
+#     def on_episode_start(
+#         self, worker, base_env, policies, episode, env_index, **kwargs
+#     ):
+#         if self.episode_iteration % self.n_episodes == 0:
+#             if not hasattr(self, "video_recorder"):
+#                 self.video_recorder = None
+#
+#             if self.video_recorder is None:
+#                 env = base_env.get_sub_environments(env_index)
+#                 self.video_recorder = VideoRecorder(
+#                     env, base_path=os.path.join(worker.log_dir, "video")
+#                 )
+#
+#         self.episode_iteration += 1
+#
+#     def on_episode_step(self, worker, base_env, episode, env_index, **kwargs):
+#         print("ON EPISODE STEP: ", env_index)
+#
+#         if self.video_recorder:
+#             base_env.get_sub_environments()[env_index]
+#             self.video_recorder.capture_frame()
+#
+#     def on_episode_end(self, worker, base_env, policies, episode, env_index, **kwargs):
+#         if self.video_recorder:
+#             self.video_recorder.close()
+#             wandb.log({"train_video": wandb.Video(self.video_recorder.path)})
+#             self.video_recorder = None
 
 
 def get_run_name(resume=False) -> str:
