@@ -246,18 +246,6 @@ class CustomAPPO(APPO):
 
         return checkpoint_path
 
-    # def after_train_step(self, train_results: ResultDict) -> None:
-    #     # iterate all videos set up in the callback:
-    #     # for each video, log it to wandb
-    #     videos = glob.glob("./videos/*.mp4")
-    #     for video in videos:
-    #         wandb.log({"Train/video": wandb.Video(video)})
-    #
-    #     for video in videos:
-    #         os.remove(video)
-    #
-    #     return super().after_train_step(train_results)
-
     def restore(
         self,
         checkpoint_path: Union[str, Checkpoint],
@@ -282,9 +270,7 @@ class CustomAPPO(APPO):
         return
 
 
-# from ray.tune.integration.wandb import WandbLoggerCallback
-
-rl_config = {"policy_type": "MultiInputPolicy", "total_timesteps": 999999}
+# rl_config = {"policy_type": "MultiInputPolicy", "total_timesteps": 1_000_000}
 
 
 class TrainingConfig(TypedDict):
@@ -364,12 +350,12 @@ def train(config: TrainingConfig) -> None:
         )
         .environment(name)
         .training(gamma=0.95, lr=1e-4)
-        # .evaluation(
-        #     evaluation_interval=50,
-        #     evaluation_parallel_to_training=workers > 1,
-        #     evaluation_num_episodes=5,
-        #     evaluation_num_workers=1 if workers > 1 else 0,
-        # )
+        .evaluation(
+            evaluation_interval=50,
+            evaluation_parallel_to_training=workers > 1,
+            evaluation_num_episodes=5,
+            evaluation_num_workers=1 if workers > 1 else 0,
+        )
         .callbacks(CustomCallback)
         .framework("torch")
     )
@@ -409,7 +395,7 @@ def train(config: TrainingConfig) -> None:
         trainer,
         name=run_id,
         config=algo_config.to_dict(),
-        stop={"timesteps_total": 100_000},
+        stop={"timesteps_total": config["steps"]},
         resume="LOCAL+ERRORED" if should_resume else False,
         # raise_on_failed_trial=True,
         checkpoint_freq=5,
@@ -566,7 +552,7 @@ if __name__ == "__main__":
 
     weights = str(pathlib.Path(args.weights).absolute().resolve())
 
-    _ = [x.strip() for x in "".split(",")]
+    steps = int(args.steps)
 
     train(
         {
@@ -576,6 +562,6 @@ if __name__ == "__main__":
             "vision_module": args.vision_module,
             "weights": weights,
             "eval": True,
-            "steps": 1_000_000,
+            "steps": steps,
         }
     )
