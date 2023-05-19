@@ -92,8 +92,30 @@ class CustomWandbLoggingActor(_WandbLoggingActor):
 
 
 class CustomWandbLoggerCallback(WandbLoggerCallback):
-    def __post_init__(self):
+    def __init__(
+        self,
+        project: Optional[str] = None,
+        group: Optional[str] = None,
+        api_key_file: Optional[str] = None,
+        api_key: Optional[str] = None,
+        excludes: Optional[List[str]] = None,
+        log_config: bool = False,
+        upload_checkpoints: bool = False,
+        save_checkpoints: bool = False,
+        **kwargs,
+    ):
         self._logger_actor_cls = CustomWandbLoggerCallback
+        super().__init__(
+            project,
+            group,
+            api_key_file,
+            api_key,
+            excludes,
+            log_config,
+            upload_checkpoints,
+            save_checkpoints,
+            **kwargs,
+        )
 
     def log_trial_result(self, iteration: int, trial: Trial, result: Dict):
         videos = glob.glob("./videos/*.mp4")
