@@ -1,61 +1,61 @@
 import argparse
+import copy
 import glob
 import os
 import pathlib
-import urllib
 import pickle
-import uuid
 import time
-import copy
-from typing import Any, Callable, Dict, List, TypedDict, Union
+from typing_extensions import override
+import urllib
+import uuid
+from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
 
 import gymnasium as gym
-from typing import Optional
 import numpy as np
 from episode_manager import EpisodeManager
 from episode_manager.episode_manager import TrainingType
-from ray.rllib.env.base_env import BaseEnv
-from ray.rllib.evaluation import RolloutWorker
-from ray.rllib.evaluation.episode import Episode
-from ray.rllib.evaluation.episode_v2 import EpisodeV2
-from ray.rllib.policy import Policy
-from ray import logger
-from ray.rllib.policy.sample_batch import SampleBatch
-from ray.rllib.utils.typing import PolicyID, ResultDict
-from ray.tune.experiment import Trial
-from ray.tune.experiment.trial import Trial
-import wandb
-from gym_env.env import (
-    CarlaEnvironment,
-    CarlaEnvironmentConfiguration,
-    TestSpeedController,
-)
 from gymnasium.wrappers.monitoring.video_recorder import VideoRecorder
-from ray import tune
+from ray import logger, tune
 from ray.air.checkpoint import Checkpoint
 from ray.air.integrations.wandb import (
     WandbLoggerCallback,
     _QueueItem,
-    _WandbLoggingActor,
     _run_wandb_process_run_info_hook,
+    _WandbLoggingActor,
 )
 from ray.rllib.algorithms.algorithm import Algorithm
 from ray.rllib.algorithms.appo import APPO, APPOConfig
 from ray.rllib.algorithms.callbacks import DefaultCallbacks
 from ray.rllib.algorithms.ppo import PPO
+from ray.rllib.env.base_env import BaseEnv
+from ray.rllib.evaluation import RolloutWorker
+from ray.rllib.evaluation.episode import Episode
+from ray.rllib.evaluation.episode_v2 import EpisodeV2
+from ray.rllib.policy import Policy
+from ray.rllib.policy.sample_batch import SampleBatch
+from ray.rllib.utils.typing import PolicyID, ResultDict
+from ray.tune.experiment import Trial
+from ray.tune.experiment.trial import Trial
 from ray.tune.registry import register_env
+from ray.util.queue import Queue
 
+import wandb
 from config import GlobalConfig
 from episode_configs import baseline_config, interfuser_config
+from gym_env.env import (
+    CarlaEnvironment,
+    CarlaEnvironmentConfiguration,
+    TestSpeedController,
+)
 from reward_functions.main import reward_function
 from vision_modules.interfuser import InterFuserVisionModule
 from vision_modules.transfuser import TransfuserVisionModule, setup_transfuser_backbone
-
 
 N_EPISODES_PER_VIDEO_ITERATION = 5
 
 
 class CustomWandbLoggingActor(_WandbLoggingActor):
+    @override
     def run(self):
         # Since we're running in a separate process already, use threads.
         os.environ["WANDB_START_METHOD"] = "thread"
@@ -104,7 +104,7 @@ class CustomWandbLoggerCallback(WandbLoggerCallback):
         save_checkpoints: bool = False,
         **kwargs,
     ):
-        self._logger_actor_cls = CustomWandbLoggerCallback
+        self._logger_actor_cls = CustomWandbLoggingActor
         super().__init__(
             project,
             group,
@@ -398,9 +398,10 @@ def train(config: TrainingConfig) -> None:
         .environment(name)
         .training(gamma=0.95, lr=1e-4)
         .evaluation(
-            evaluation_interval=50,
+            evaluation_interval=20,
+            evaluation_duration_unit="episodes",
             evaluation_parallel_to_training=workers > 1,
-            evaluation_num_episodes=5,
+            evaluation_duration=5,
             evaluation_num_workers=1 if workers > 1 else 0,
         )
         .callbacks(CustomCallback)
