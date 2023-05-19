@@ -2,6 +2,7 @@ import argparse
 import glob
 import os
 import pathlib
+import urllib
 import pickle
 import uuid
 import time
@@ -18,6 +19,7 @@ from ray.rllib.evaluation import RolloutWorker
 from ray.rllib.evaluation.episode import Episode
 from ray.rllib.evaluation.episode_v2 import EpisodeV2
 from ray.rllib.policy import Policy
+from ray import logger
 from ray.rllib.policy.sample_batch import SampleBatch
 from ray.rllib.utils.typing import PolicyID, ResultDict
 from ray.tune.experiment import Trial
@@ -31,7 +33,12 @@ from gym_env.env import (
 from gymnasium.wrappers.monitoring.video_recorder import VideoRecorder
 from ray import tune
 from ray.air.checkpoint import Checkpoint
-from ray.air.integrations.wandb import WandbLoggerCallback, _QueueItem
+from ray.air.integrations.wandb import (
+    WandbLoggerCallback,
+    _QueueItem,
+    _WandbLoggingActor,
+    _run_wandb_process_run_info_hook,
+)
 from ray.rllib.algorithms.algorithm import Algorithm
 from ray.rllib.algorithms.appo import APPO, APPOConfig
 from ray.rllib.algorithms.callbacks import DefaultCallbacks
@@ -48,22 +55,46 @@ from vision_modules.transfuser import TransfuserVisionModule, setup_transfuser_b
 N_EPISODES_PER_VIDEO_ITERATION = 5
 
 
-# class VideoUploader(tune.Callback):
-#     def on_step_end(self, iteration: int, trials: List[Trial], **info):
-#         videos = glob.glob("./videos/*.mp4")
-#
-#         print("VIDEOS: ", videos)
-#         for video in videos:
-#             print("LOGGING VIDEO: ", video)
-#             wandb.log({"video": wandb.Video(video)})
-#
-#         for video in videos:
-#             os.remove(video)
-#
-#         return super().on_step_end(iteration, trials, **info)
+class CustomWandbLoggingActor(_WandbLoggingActor):
+    def run(self):
+        # Since we're running in a separate process already, use threads.
+        os.environ["WANDB_START_METHOD"] = "thread"
+        run = self._wandb.init(*self.args, **self.kwargs)
+        run.config.trial_log_path = self._logdir
+
+        _run_wandb_process_run_info_hook(run)
+
+        while True:
+            item_type, item_content = self.queue.get()
+            if item_type == _QueueItem.END:
+                break
+
+            if item_type == _QueueItem.CHECKPOINT:
+                self._handle_checkpoint(item_content)
+                continue
+
+            if item_type == "VIDEO":
+                print("GOT VIDEO TYPE: ", item_content)
+                self._wandb.log({"video": item_content})
+                continue
+
+            assert item_type == _QueueItem.RESULT
+            log, config_update = self._handle_result(item_content)
+
+            try:
+                self._wandb.config.update(config_update, allow_val_change=True)
+                self._wandb.log(log)
+            except urllib.error.HTTPError as e:
+                # Ignore HTTPError. Missing a few data points is not a
+                # big issue, as long as things eventually recover.
+                logger.warn("Failed to log result to w&b: {}".format(str(e)))
+        self._wandb.finish()
 
 
 class CustomWandbLoggerCallback(WandbLoggerCallback):
+    def __post_init__(self):
+        self._logger_actor_cls = CustomWandbLoggerCallback
+
     def log_trial_result(self, iteration: int, trial: Trial, result: Dict):
         videos = glob.glob("./videos/*.mp4")
         videos.sort()
@@ -79,28 +110,21 @@ class CustomWandbLoggerCallback(WandbLoggerCallback):
                 print(f"MOVING {video} to {video_path}")
                 os.rename(video, video_path)
                 self._trial_queues[trial].put(
-                    (_QueueItem.VIDEO, wandb.Video(video_path, fps=10, format="mp4"))
+                    ("VIDEO", wandb.Video(video_path, fps=10, format="mp4"))
                 )
 
         return super().log_trial_result(iteration, trial, result)
 
-    # def on_trial_save(self, iteration: int, trials: List[Trial], trial: Trial, **info):
-    #     print("UPLOADING VIDEOS")
-    #     videos = glob.glob("./videos/*.mp4")
-    #
-    #     for video in videos:
-    #         self._trial_queues[trial].put(
-    #             (_QueueItem.RESULT, {"video": wandb.Video(video)})
-    #         )
-    #
-    #     return super().on_trial_save(iteration, trials, trial, **info)
-
-    # def on_step_end(self, iteration: int, trials: List[Trial], **info):
-    #     return super().on_step_end(iteration, trials, **info)
-
 
 class CustomCallback(DefaultCallbacks):
     episode_iteration: Dict[int, int] = {}
+
+    def __init__(self, legacy_callbacks_dict: Dict[str, Any] = None):
+        self.path = "./videos/"
+        if not os.path.exists(self.path):
+            os.makedirs(self.path)
+
+        super().__init__(legacy_callbacks_dict)
 
     def on_episode_start(
         self,
@@ -135,10 +159,11 @@ class CustomCallback(DefaultCallbacks):
 
             if self.video_recorder is None:
                 env = base_env.get_sub_environments()[index]
+
                 self.video_recorder = VideoRecorder(
                     env,
                     base_path=os.path.join(
-                        "./videos/", f"{int(time.time())}_{uuid.uuid4()}"
+                        self.path, f"{int(time.time())}_{uuid.uuid4()}"
                     ),
                 )
 
