@@ -490,6 +490,7 @@ def make_carla_env(
                 use_target_feature=True,
                 render_imitation=False,
                 postprocess=False,
+                gpu_device=i % gpus,
             )
             episode_config = interfuser_config()
 
