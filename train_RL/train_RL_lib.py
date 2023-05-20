@@ -8,6 +8,7 @@ import time
 import urllib
 import uuid
 from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
+from episode_manager.data import TrafficType
 
 import gymnasium as gym
 import numpy as np
@@ -47,7 +48,7 @@ from reward_functions.main import reward_function
 from vision_modules.interfuser import InterFuserVisionModule
 from vision_modules.transfuser import TransfuserVisionModule, setup_transfuser_backbone
 
-N_EPISODES_PER_VIDEO_ITERATION = 5
+N_EPISODES_PER_VIDEO_ITERATION = 10
 
 
 class CustomWandbLoggingActor(_WandbLoggingActor):
@@ -324,6 +325,7 @@ class TrainingConfig(TypedDict):
     vision_module: str
     weights: str
     steps: int
+    traffic_type: TrafficType
 
 
 def validate_training_config(config: TrainingConfig) -> None:
@@ -353,6 +355,7 @@ def train(config: TrainingConfig) -> None:
         "towns": ["Town01", "Town03", "Town04", "Town06"],
         "town_change_frequency": 10,
         "concat_images": True,
+        "traffic_type": TrafficType.NO_TRAFFIC,
     }
 
     eval_config: CarlaEnvironmentConfiguration = copy.deepcopy(carla_config)
@@ -373,7 +376,9 @@ def train(config: TrainingConfig) -> None:
 
     trainer_config = APPOConfig()  # if config["workers"] > 1 else PPOConfig()
 
-    gpu_fraction = (config["gpus"] / (workers + 2 if workers >1 else 1)) - 0.01
+    gpu_fraction = (config["gpus"] / (workers + (2 if workers > 1 else 1))) - 0.0001
+
+    print("GPU FRACTION: ", gpu_fraction)
 
     algo_config = (
         trainer_config.rollouts(
@@ -493,8 +498,11 @@ def make_carla_env(
         episode_config.training_type = (
             TrainingType.EVALUATION if evaluation else TrainingType.TRAINING
         )
+
         time.sleep(5 * (i + 1))
-        episode_manager = EpisodeManager(episode_config, gpu_device=i % gpus)
+        episode_manager = EpisodeManager(
+            episode_config, gpu_device=i % gpus, server_wait_time=30
+        )
         speed_controller = TestSpeedController()
 
         env = CarlaEnvironment(
@@ -584,6 +592,18 @@ if __name__ == "__main__":
         help="Vision module, (transfuser, interfuser) (default: None)",
     )
 
+    parser.add_argument(
+        "--no-traffic",
+        action="store_true",
+        help="Deactivates traffic for the training (default: False)",
+    )
+
+    parser.add_argument(
+        "--no-scenarios",
+        action="store_true",
+        help="deactivates challenging scenarios during training (default: False)",
+    )
+
     parser.add_argument("--steps", type=int, default=1_000_000, help="Number of steps")
 
     parser.add_argument("--weights", type=str, default="", help="Path to weights file")
@@ -598,6 +618,16 @@ if __name__ == "__main__":
 
     steps = int(args.steps)
 
+    no_traffic = args.no_traffic
+    no_scenarios = args.no_scenarios
+
+    traffic_type = TrafficType.SCENARIO
+
+    if no_scenarios:
+        traffic_type = TrafficType.TRAFFIC
+    if no_traffic:
+        traffic_type = TrafficType.NO_TRAFFIC
+
     train(
         {
             "workers": workers,
@@ -607,5 +637,6 @@ if __name__ == "__main__":
             "weights": weights,
             "eval": True,
             "steps": steps,
+            "traffic_type": traffic_type,
         }
     )

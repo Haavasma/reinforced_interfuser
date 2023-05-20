@@ -3,6 +3,7 @@ import random
 import time
 from typing import Any, Callable, List, Optional, Protocol, Set, Tuple, TypedDict
 import typing
+from episode_manager.data import TrafficType
 from episode_manager.renderer import WorldStateRenderer, generate_pygame_surface
 
 from collections import deque
@@ -63,6 +64,7 @@ class CarlaEnvironmentConfiguration(TypedDict):
     towns: List[str]
     town_change_frequency: int
     concat_images: bool
+    traffic_type: TrafficType
 
 
 def default_config() -> CarlaEnvironmentConfiguration:
@@ -75,6 +77,7 @@ def default_config() -> CarlaEnvironmentConfiguration:
         "towns": ["Town01", "Town03", "Town04", "Town06"],
         "town_change_frequency": 10,
         "concat_images": False,
+        "traffic_type": TrafficType.SCENARIO,
     }
 
 
@@ -311,7 +314,9 @@ class CarlaEnvironment(gym.Env):
             self._town = random.choice(self.config["towns"])
 
         self._metrics = self.carla_manager.stop_episode()
-        self.state, self.data = self.carla_manager.start_episode(town=self._town)
+        self.state, self.data = self.carla_manager.start_episode(
+            town=self._town, traffic_type=self.config["traffic_type"]
+        )
 
         self._route_planner = RoutePlanner()
         self._route_planner.set_route(self.data.global_plan, True)
