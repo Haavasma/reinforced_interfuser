@@ -373,7 +373,7 @@ def train(config: TrainingConfig) -> None:
 
     trainer_config = APPOConfig()  # if config["workers"] > 1 else PPOConfig()
 
-    gpu_fraction = (1 / (workers + 1)) - 0.01
+    gpu_fraction = (config["gpus"] / (workers + 2 if workers >1 else 1)) - 0.01
 
     algo_config = (
         trainer_config.rollouts(
@@ -487,7 +487,6 @@ def make_carla_env(
                 use_target_feature=True,
                 render_imitation=False,
                 postprocess=False,
-                gpu_device=i % gpus,
             )
             episode_config = interfuser_config()
 

@@ -36,8 +36,8 @@ echo "Total of $SLURM_NTASKS cores"
 #conda activate rl_train
 
 
-workers=1
-gpus=1
+workers=4
+gpus=2
 python train_RL_lib.py --workers $workers --gpus $gpus --vision-module interfuser --weights ./models/model_best.pth.tar
 pkill -f CarlaUE4
 pkill -f CarlaUE4
