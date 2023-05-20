@@ -41,12 +41,16 @@ gpus=1
 python train_RL_lib.py --workers $workers --gpus $gpus --vision-module interfuser --weights ./models/model_best.pth.tar
 pkill -f CarlaUE4
 pkill -f CarlaUE4
+pkill -f ray::RolloutWorker
+pkill -f ray::RolloutWorker
 
 while true
   do 
   python train_RL_lib.py --workers $workers --gpus $gpus --vision-module interfuser --weights ./models/model_best.pth.tar --resume
   pkill -f CarlaUE4
   pkill -f CarlaUE4
+  pkill -f ray::RolloutWorker
+  pkill -f ray::RolloutWorker
   sleep 1
   done
 

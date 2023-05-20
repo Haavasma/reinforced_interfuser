@@ -5,7 +5,6 @@ import os
 import pathlib
 import pickle
 import time
-from typing_extensions import override
 import urllib
 import uuid
 from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
@@ -23,7 +22,6 @@ from ray.air.integrations.wandb import (
     _run_wandb_process_run_info_hook,
     _WandbLoggingActor,
 )
-from ray.rllib.algorithms.algorithm import Algorithm
 from ray.rllib.algorithms.appo import APPO, APPOConfig
 from ray.rllib.algorithms.callbacks import DefaultCallbacks
 from ray.rllib.algorithms.ppo import PPO
@@ -32,12 +30,10 @@ from ray.rllib.evaluation import RolloutWorker
 from ray.rllib.evaluation.episode import Episode
 from ray.rllib.evaluation.episode_v2 import EpisodeV2
 from ray.rllib.policy import Policy
-from ray.rllib.policy.sample_batch import SampleBatch
-from ray.rllib.utils.typing import PolicyID, ResultDict
+from ray.rllib.utils.typing import PolicyID
 from ray.tune.experiment import Trial
-from ray.tune.experiment.trial import Trial
 from ray.tune.registry import register_env
-from ray.util.queue import Queue
+from typing_extensions import override
 
 import wandb
 from config import GlobalConfig
@@ -397,13 +393,13 @@ def train(config: TrainingConfig) -> None:
         )
         .environment(name)
         .training(gamma=0.95, lr=1e-4)
-        .evaluation(
-            evaluation_interval=20,
-            evaluation_duration_unit="episodes",
-            evaluation_parallel_to_training=workers > 1,
-            evaluation_duration=5,
-            evaluation_num_workers=1 if workers > 1 else 0,
-        )
+        # .evaluation(
+        #     evaluation_interval=20,
+        #     evaluation_duration_unit="episodes",
+        #     evaluation_parallel_to_training=workers > 1,
+        #     evaluation_duration=5,
+        #     evaluation_num_workers=1 if workers > 1 else 0,
+        # )
         .callbacks(CustomCallback)
         .framework("torch")
     )
