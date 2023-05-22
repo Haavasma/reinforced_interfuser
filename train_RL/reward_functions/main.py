@@ -14,11 +14,17 @@ class Reward:
     distance_reward: float
 
     def calculate_reward(self) -> float:
+        weights = [2.0, 1.0, 1.0]
+
         assert self.speed_reward >= 0 and self.speed_reward <= 1
         assert self.angle_reward >= 0 and self.angle_reward <= 1
         assert self.distance_reward >= 0 and self.distance_reward <= 1
 
-        return (self.speed_reward + self.angle_reward + self.distance_reward) / 3
+        return (
+            (self.speed_reward * weights[0])
+            + (self.angle_reward * weights[1])
+            + self.distance_reward * weights[2]
+        ) / sum(weights)
 
 
 def reward_function(state: WorldState, data: ScenarioData) -> Tuple[float, bool]:
@@ -29,7 +35,7 @@ def reward_function(state: WorldState, data: ScenarioData) -> Tuple[float, bool]
 
     if len(state.ego_vehicle_state.privileged.collision_history.items()) > 0:
         print("COLLISION")
-        return -100, True
+        return -10, True
 
     if state.done:
         return 1, True
@@ -65,12 +71,12 @@ def reward_function(state: WorldState, data: ScenarioData) -> Tuple[float, bool]
     )
     angle_reward = _calculate_angle_reward(angle_diff)
     if angle_reward < 0:
-        return -50, True
+        return -10, True
 
     # Distance reward
     distance_reward = _calculate_distance_reward(distance_diff)
     if distance_reward < 0:
-        return -50, True
+        return -10, True
 
     result = Reward(speed_reward, angle_reward, distance_reward).calculate_reward()
 

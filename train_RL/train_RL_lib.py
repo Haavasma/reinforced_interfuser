@@ -48,7 +48,7 @@ from reward_functions.main import reward_function
 from vision_modules.interfuser import InterFuserVisionModule
 from vision_modules.transfuser import TransfuserVisionModule, setup_transfuser_backbone
 
-N_EPISODES_PER_VIDEO_ITERATION = 10
+N_EPISODES_PER_VIDEO_ITERATION = 20
 
 
 class CustomWandbLoggingActor(_WandbLoggingActor):
@@ -400,9 +400,9 @@ def train(config: TrainingConfig) -> None:
         .environment(name)
         .training(
             gamma=0.98,
-            lr=1e-5,
+            lr=1e-4,
             model={
-                "fcnet_hiddens": [1024, 512],
+                "post_fcnet_hiddens": [1024, 512],
                 "conv_filters": [
                     [16, [6, 8], [3, 4]],
                     [32, [6, 6], 4],
@@ -514,7 +514,7 @@ def make_carla_env(
         )
 
         episode_manager = EpisodeManager(
-            episode_config, gpu_device=i % gpus, server_wait_time=10 + ((i+1)*10)
+            episode_config, gpu_device=i % gpus, server_wait_time=10 + ((i + 1) * 10)
         )
         speed_controller = TestSpeedController()
 

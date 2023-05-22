@@ -490,13 +490,16 @@ class CarlaEnvironment(gym.Env):
         goal_speed = float(goal_speed)
         steering = float(steering)
 
+        if goal_speed > 3.0:
+            steering = steering * 0.5
+
         throttle, brake, reverse = self.speed_controller(
             goal_speed, self.state.ego_vehicle_state.speed
         )
 
         new_action = Action(throttle, brake, reverse, steering)
 
-        print("NEW ACTION: ", new_action)
+        print("NEW ACTION: ", new_action, "\nGOAL SPEED: ", goal_speed)
 
         if self.vision_module is not None:
             new_action = self.vision_module.postprocess_action(new_action)
