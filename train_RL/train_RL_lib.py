@@ -513,9 +513,8 @@ def make_carla_env(
             TrainingType.EVALUATION if evaluation else TrainingType.TRAINING
         )
 
-        time.sleep(5 * (i + 1))
         episode_manager = EpisodeManager(
-            episode_config, gpu_device=i % gpus, server_wait_time=10
+            episode_config, gpu_device=i % gpus, server_wait_time=10 + ((i+1)*10)
         )
         speed_controller = TestSpeedController()
 
