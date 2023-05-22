@@ -3,6 +3,7 @@ import random
 import time
 from typing import Any, Callable, List, Optional, Protocol, Set, Tuple, TypedDict
 import typing
+from PIL import Image
 from episode_manager.data import TrafficType
 from episode_manager.renderer import WorldStateRenderer, generate_pygame_surface
 
@@ -65,6 +66,7 @@ class CarlaEnvironmentConfiguration(TypedDict):
     town_change_frequency: int
     concat_images: bool
     traffic_type: TrafficType
+    concat_size: Tuple[int, int]
 
 
 def default_config() -> CarlaEnvironmentConfiguration:
@@ -78,6 +80,7 @@ def default_config() -> CarlaEnvironmentConfiguration:
         "town_change_frequency": 10,
         "concat_images": False,
         "traffic_type": TrafficType.SCENARIO,
+        "concat_size": (480, 640),
     }
 
 
@@ -271,13 +274,23 @@ class CarlaEnvironment(gym.Env):
 
         camera_configs = self.carla_manager.config.car_config.cameras
 
-        for index, camera in enumerate(camera_configs):
-            observation_space_dict[f"image_{index}"] = Box(
+        if self.config["concat_images"]:
+            height = camera_configs[0]["height"]
+            assert all(camera["height"] == height for camera in camera_configs)
+            observation_space_dict["image"] = Box(
                 low=0,
                 high=255,
-                shape=(camera["height"], camera["width"], 3),
+                shape=(self.config["concat_size"][0], self.config["concat_size"][1], 3),
                 dtype=np.uint8,
             )
+        else:
+            for index, camera in enumerate(camera_configs):
+                observation_space_dict[f"image_{index}"] = Box(
+                    low=0,
+                    high=255,
+                    shape=(camera["height"], camera["width"], 3),
+                    dtype=np.uint8,
+                )
 
         observation_space_dict["state"] = self._state_observation_space()
 
@@ -353,8 +366,26 @@ class CarlaEnvironment(gym.Env):
     def _get_obs_without_vision(self):
         observation = self._setup_observation_state()
 
-        for index, image in enumerate(self.state.ego_vehicle_state.sensor_data.images):
-            observation[f"image_{index}"] = image[:, :, :3]
+        if self.config["concat_images"]:
+            concat_array = np.concatenate(
+                [
+                    image[:, :, :3]
+                    for image in self.state.ego_vehicle_state.sensor_data.images
+                ],
+                axis=1,
+            )
+
+            observation["image"] = np.array(
+                Image.fromarray(concat_array).resize(
+                    (self.config["concat_size"][1], self.config["concat_size"][0])
+                )
+            )
+            print("OBSERVATION SHAPE: ", observation["image"].shape)
+        else:
+            for index, image in enumerate(
+                self.state.ego_vehicle_state.sensor_data.images
+            ):
+                observation[f"image_{index}"] = image[:, :, :3]
 
         if self.carla_manager.config.car_config.lidar["enabled"]:
             observation[
@@ -474,3 +505,58 @@ class CarlaEnvironment(gym.Env):
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
+
+
+def shift_x_scale_crop(image, scale, crop, crop_shift=0):
+    crop_h, crop_w = crop
+    (width, height) = (int(image.width // scale), int(image.height // scale))
+    im_resized = image.resize((width, height))
+    image = np.array(im_resized)
+    start_y = height // 2 - crop_h // 2
+    start_x = width // 2 - crop_w // 2
+
+    # only shift in x direction
+    start_x += int(crop_shift // scale)
+    cropped_image = image[start_y : start_y + crop_h, start_x : start_x + crop_w]
+    cropped_image = np.transpose(cropped_image, (2, 0, 1))
+    return cropped_image
+
+
+def scale_crop(image, scale=1, start_x=0, crop_x=None, start_y=0, crop_y=None):
+    (width, height) = (image.width // scale, image.height // scale)
+    if scale != 1:
+        image = image.resize((width, height))
+    if crop_x is None:
+        crop_x = width
+    if crop_y is None:
+        crop_y = height
+
+    image = np.asarray(image)
+    cropped_image = image[start_y : start_y + crop_y, start_x : start_x + crop_x]
+    return cropped_image
+
+
+def prepare_image(images: List[np.ndarray]) -> np.ndarray:
+    rgb = []
+
+    for image in images:
+        rgb_pos = scale_crop(
+            Image.fromarray(image),
+            1,
+            320,
+            320,
+            160,
+            160,
+        )
+        rgb.append(rgb_pos)
+    rgb = np.concatenate(rgb, axis=1)
+
+    image = Image.fromarray(rgb)
+    image_degrees = []
+    rgb = np.expand_dims(
+        shift_x_scale_crop(image, scale=1, crop=(160, 704), crop_shift=0), axis=0
+    )
+    image_degrees.append(rgb)
+    image = np.concatenate(image_degrees, axis=0)
+
+    return image

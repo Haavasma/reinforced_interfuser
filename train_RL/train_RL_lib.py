@@ -354,8 +354,9 @@ def train(config: TrainingConfig) -> None:
         "continuous_steering_range": (-0.3, 0.3),
         "towns": ["Town01", "Town03", "Town04", "Town06"],
         "town_change_frequency": 10,
-        "concat_images": True,
+        "concat_images": False,
         "traffic_type": TrafficType.NO_TRAFFIC,
+        "concat_size": (240, 320),
     }
 
     eval_config: CarlaEnvironmentConfiguration = copy.deepcopy(carla_config)
@@ -397,12 +398,25 @@ def train(config: TrainingConfig) -> None:
             num_gpus_per_worker=gpu_fraction,
         )
         .environment(name)
-        .training(gamma=0.95, lr=1e-4)
+        .training(
+            gamma=0.98,
+            lr=1e-5,
+            model={
+                "fcnet_hiddens": [1024, 512],
+                "conv_filters": [
+                    [16, [6, 8], [3, 4]],
+                    [32, [6, 6], 4],
+                    [256, [9, 9], 1],
+                ],
+                "use_attention": False,
+                "framestack": True,
+            },
+        )
         # .evaluation(
-        #     evaluation_interval=20,
+        #     evaluation_interval=10,
         #     evaluation_duration_unit="episodes",
         #     evaluation_parallel_to_training=workers > 1,
-        #     evaluation_duration=5,
+        #     evaluation_duration=10,
         #     evaluation_num_workers=1 if workers > 1 else 0,
         # )
         .callbacks(CustomCallback)
@@ -501,7 +515,7 @@ def make_carla_env(
 
         time.sleep(5 * (i + 1))
         episode_manager = EpisodeManager(
-            episode_config, gpu_device=i % gpus, server_wait_time=30
+            episode_config, gpu_device=i % gpus, server_wait_time=10
         )
         speed_controller = TestSpeedController()
 

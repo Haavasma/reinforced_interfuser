@@ -40,7 +40,7 @@ TRANSFUSER_CONFIG = EpisodeManagerConfiguration(
             "channels": 32,
             "range": 5000,
             "shape": (3, 256, 256),
-            "points_per_second": 600000,
+            "points_per_second": 300000,
             "transform": Transform(Location(1.3, 0, 2.5), Rotation(0, -90, 0)),
         },
     ),
@@ -51,7 +51,7 @@ def interfuser_config() -> EpisodeManagerConfiguration:
     return EpisodeManagerConfiguration()
 
 
-_baseline_image_size = (84, 84)
+_baseline_image_size = (160, 120)
 
 
 def baseline_config() -> EpisodeManagerConfiguration:
