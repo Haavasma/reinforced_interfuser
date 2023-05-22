@@ -24,7 +24,7 @@ class Reward:
 def reward_function(state: WorldState, data: ScenarioData) -> Tuple[float, bool]:
     # Speed reward
     dist_to_hazard = closest_hazard(state)
-    speed_limit = 6.0
+    speed_limit = 4.0
     speed = state.ego_vehicle_state.speed
 
     if len(state.ego_vehicle_state.privileged.collision_history.items()) > 0:

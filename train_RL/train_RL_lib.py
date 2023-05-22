@@ -347,7 +347,7 @@ def train(config: TrainingConfig) -> None:
     )
 
     carla_config: CarlaEnvironmentConfiguration = {
-        "speed_goal_actions": [0.0, 4.5, 6.0],
+        "speed_goal_actions": [0.0, 2.0, 4.0],
         "steering_actions": np.linspace(-0.5, 0.5, 31).tolist(),
         "discrete_actions": True,
         "continuous_speed_range": (0.0, 6.0),
