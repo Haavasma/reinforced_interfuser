@@ -222,6 +222,7 @@ class CarlaEnvironment(gym.Env):
         self.amount_of_steering_actions = len(self.config["steering_actions"])
         self._route_planner: Optional[RoutePlanner] = None
         self.metadata["render_fps"] = 10
+        self._reward: Optional[float] = None
 
         print("INITIALIZING ENVIRONMENT")
 
@@ -351,7 +352,15 @@ class CarlaEnvironment(gym.Env):
             # return np.transpose(np.array(surface), axes=(1, 0, 2))
 
         else:
-            pygame_surface = generate_pygame_surface(self.state)
+            additional_text = {}
+
+            if self._reward is not None:
+                additional_text["Reward: "] = self._reward
+
+            pygame_surface = generate_pygame_surface(
+                self.state,
+                additional_text=additional_text,
+            )
             np_array = pygame.surfarray.array3d(pygame_surface).swapaxes(0, 1)
 
             return np_array
@@ -495,9 +504,9 @@ class CarlaEnvironment(gym.Env):
         # update state with result of using the new action
         self.state = self.carla_manager.step(new_action)
 
-        reward, done = self.reward_function(self.state, self.data)
+        self._reward, done = self.reward_function(self.state, self.data)
 
-        result = (self._get_obs(), reward, done or self.state.done, False, {})
+        result = (self._get_obs(), self._reward, done or self.state.done, False, {})
         self.time = time.time()
 
         return result
