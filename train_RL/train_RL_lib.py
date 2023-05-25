@@ -129,7 +129,7 @@ def train(config: TrainingConfig) -> None:
             },
         )
         .evaluation(
-            evaluation_interval=2,
+            evaluation_interval=10,
             evaluation_duration_unit="episodes",
             evaluation_duration=5,
             evaluation_config={"env_config": {"is_eval": True}},
