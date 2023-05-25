@@ -232,7 +232,7 @@ def make_carla_env(
     seed: int = 0,
 ) -> Callable[[Any], gym.Env]:
     def _init(env_config) -> gym.Env:
-        i = env_config.worker_index - 1
+        i = env_config.worker_index
         print("WORKER INDEX: ", i)
 
         # is_eval is set for evaluation workers
@@ -263,7 +263,7 @@ def make_carla_env(
         )
 
         episode_manager = EpisodeManager(
-            episode_config, gpu_device=i % gpus, server_wait_time=15 + ((i + 1) * 10)
+            episode_config, gpu_device=i % gpus, server_wait_time=15 + (i * 10)
         )
         speed_controller = TestSpeedController()
 
