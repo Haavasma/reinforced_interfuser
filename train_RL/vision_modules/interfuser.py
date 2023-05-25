@@ -9,7 +9,6 @@ from typing import Tuple
 import carla
 import cv2
 import numpy as np
-import pygame
 import torch
 from episode_manager.episode_manager import Action, WorldState
 from gym_env.env import VisionModule, WorldState

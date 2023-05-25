@@ -1,42 +1,20 @@
 import argparse
 import copy
-import glob
 import os
 import pathlib
 import pickle
-import time
-import urllib
 import uuid
-from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
-from episode_manager.data import TrafficType
+from typing import Any, Callable, TypedDict
 
 import gymnasium as gym
 import numpy as np
 from episode_manager import EpisodeManager
+from episode_manager.data import TrafficType
 from episode_manager.episode_manager import TrainingType
-from gymnasium.wrappers.monitoring.video_recorder import VideoRecorder
-from ray import logger, tune
-from ray.air.checkpoint import Checkpoint
-from ray.air.integrations.wandb import (
-    WandbLoggerCallback,
-    _QueueItem,
-    _run_wandb_process_run_info_hook,
-    _WandbLoggingActor,
-)
-from ray.rllib.algorithms.appo import APPO, APPOConfig
-from ray.rllib.algorithms.callbacks import DefaultCallbacks
-from ray.rllib.algorithms.ppo import PPO
-from ray.rllib.env.base_env import BaseEnv
-from ray.rllib.evaluation import RolloutWorker
-from ray.rllib.evaluation.episode import Episode
-from ray.rllib.evaluation.episode_v2 import EpisodeV2
-from ray.rllib.policy import Policy
-from ray.rllib.utils.typing import PolicyID
-from ray.tune.experiment import Trial
+from ray import tune
+from ray.rllib.algorithms.appo import APPOConfig
 from ray.tune.registry import register_env
-from typing_extensions import override
 
-import wandb
 from config import GlobalConfig
 from episode_configs import baseline_config, interfuser_config
 from gym_env.env import (
@@ -45,274 +23,11 @@ from gym_env.env import (
     TestSpeedController,
 )
 from reward_functions.main import reward_function
+from rl_lib.appo import CustomAPPO
+from rl_lib.callback import CustomCallback
+from rl_lib.wandb_logging import CustomWandbLoggerCallback
 from vision_modules.interfuser import InterFuserVisionModule
 from vision_modules.transfuser import TransfuserVisionModule, setup_transfuser_backbone
-
-N_EPISODES_PER_VIDEO_ITERATION = 20
-
-
-class CustomWandbLoggingActor(_WandbLoggingActor):
-    @override
-    def run(self):
-        # Since we're running in a separate process already, use threads.
-        os.environ["WANDB_START_METHOD"] = "thread"
-        run = self._wandb.init(*self.args, **self.kwargs)
-        run.config.trial_log_path = self._logdir
-
-        _run_wandb_process_run_info_hook(run)
-
-        while True:
-            item_type, item_content = self.queue.get()
-            if item_type == _QueueItem.END:
-                break
-
-            if item_type == _QueueItem.CHECKPOINT:
-                self._handle_checkpoint(item_content)
-                continue
-
-            if item_type == "VIDEO":
-                print("GOT VIDEO TYPE: ", item_content)
-                self._wandb.log({"video": item_content})
-                continue
-
-            assert item_type == _QueueItem.RESULT
-            log, config_update = self._handle_result(item_content)
-
-            try:
-                self._wandb.config.update(config_update, allow_val_change=True)
-                self._wandb.log(log)
-            except urllib.error.HTTPError as e:
-                # Ignore HTTPError. Missing a few data points is not a
-                # big issue, as long as things eventually recover.
-                logger.warn("Failed to log result to w&b: {}".format(str(e)))
-        self._wandb.finish()
-
-
-class CustomWandbLoggerCallback(WandbLoggerCallback):
-    def __init__(
-        self,
-        project: Optional[str] = None,
-        group: Optional[str] = None,
-        api_key_file: Optional[str] = None,
-        api_key: Optional[str] = None,
-        excludes: Optional[List[str]] = None,
-        log_config: bool = False,
-        upload_checkpoints: bool = False,
-        save_checkpoints: bool = False,
-        **kwargs,
-    ):
-        self._logger_actor_cls = CustomWandbLoggingActor
-        super().__init__(
-            project,
-            group,
-            api_key_file,
-            api_key,
-            excludes,
-            log_config,
-            upload_checkpoints,
-            save_checkpoints,
-            **kwargs,
-        )
-
-    def log_trial_result(self, iteration: int, trial: Trial, result: Dict):
-        videos = glob.glob("./videos/*.mp4")
-        videos.sort()
-        if len(videos) > 0:
-            for video in videos:
-                # move videos to trial specific folder
-                video_name = os.path.basename(video)
-                video_path = os.path.join(str(trial.logdir), "videos", video_name)
-                pathlib.Path(os.path.dirname(video_path)).mkdir(
-                    parents=True, exist_ok=True
-                )
-
-                print(f"MOVING {video} to {video_path}")
-                os.rename(video, video_path)
-                self._trial_queues[trial].put(
-                    ("VIDEO", wandb.Video(video_path, fps=10, format="mp4"))
-                )
-
-        return super().log_trial_result(iteration, trial, result)
-
-
-class CustomCallback(DefaultCallbacks):
-    episode_iteration: Dict[int, int] = {}
-
-    def __init__(self, legacy_callbacks_dict: Dict[str, Any] = None):
-        self.path = "./videos/"
-        if not os.path.exists(self.path):
-            os.makedirs(self.path)
-
-        super().__init__(legacy_callbacks_dict)
-
-    def on_episode_start(
-        self,
-        *,
-        worker: RolloutWorker,
-        base_env: BaseEnv,
-        policies: Dict[PolicyID, Policy],
-        episode: Union[Episode, EpisodeV2],
-        env_index: Optional[int] = None,
-        **kwargs,
-    ) -> None:
-        # Collect all metrics and average them on the environments
-        metrics = {}
-        n_sub_envs = len(base_env.get_sub_environments())
-        for env in base_env.get_sub_environments():
-            for key, value in env.metrics.items():
-                if key in metrics:
-                    metrics[key] += value
-                else:
-                    metrics[key] = value
-
-        for key, value in metrics.items():
-            episode.custom_metrics[key] = value / n_sub_envs
-
-        index = env_index if env_index is not None else 0
-
-        iteration = self.episode_iteration.get(index, 0)
-
-        if iteration % N_EPISODES_PER_VIDEO_ITERATION == 0:
-            if not hasattr(self, "video_recorder"):
-                self.video_recorder = None
-
-            if self.video_recorder is None:
-                env = base_env.get_sub_environments()[index]
-
-                self.video_recorder = VideoRecorder(
-                    env,
-                    base_path=os.path.join(
-                        self.path, f"{int(time.time())}_{uuid.uuid4()}"
-                    ),
-                )
-
-        if index in self.episode_iteration:
-            self.episode_iteration[index] += 1
-        else:
-            self.episode_iteration[index] = 1
-
-        return super().on_episode_start(
-            worker=worker,
-            base_env=base_env,
-            policies=policies,
-            episode=episode,
-            env_index=env_index,
-            **kwargs,
-        )
-
-    def on_episode_step(self, worker, base_env, episode, env_index, **kwargs):
-        if self.video_recorder:
-            base_env.get_sub_environments()[env_index]
-            self.video_recorder.capture_frame()
-
-        return super().on_episode_step(
-            worker=worker,
-            base_env=base_env,
-            episode=episode,
-            env_index=env_index,
-            **kwargs,
-        )
-
-    def on_episode_end(self, worker, base_env, policies, episode, env_index, **kwargs):
-        if self.video_recorder:
-            self.video_recorder.close()
-            self.video_recorder = None
-
-        return super().on_episode_end(
-            worker=worker,
-            base_env=base_env,
-            policies=policies,
-            episode=episode,
-            env_index=env_index,
-            **kwargs,
-        )
-
-
-class CustomPPO(PPO):
-    def save(
-        self, checkpoint_dir: Optional[str] = None, prevent_upload: bool = False
-    ) -> str:
-        checkpoint_path = super().save(checkpoint_dir, prevent_upload)
-        metrics_path = os.path.join(checkpoint_path, "metrics.pkl")
-
-        with open(metrics_path, "wb") as f:
-            pickle.dump(self._progress_metrics, f)
-
-        evaluation_metrics_path = os.path.join(
-            checkpoint_path, "evaluation_metrics.pkl"
-        )
-
-        with open(evaluation_metrics_path, "wb") as f:
-            pickle.dump(self.evaluation_metrics, f)
-
-        return checkpoint_path
-
-    def restore(
-        self,
-        checkpoint_path: Union[str, Checkpoint],
-        checkpoint_node_ip: Optional[str] = None,
-        fallback_to_latest: bool = False,
-    ):
-        super().restore(checkpoint_path, checkpoint_node_ip, fallback_to_latest)
-        metrics_path = os.path.join(os.path.dirname(checkpoint_path), "metrics.pkl")
-
-        if os.path.exists(metrics_path):
-            with open(metrics_path, "rb") as f:
-                self._progress_metrics = pickle.load(f)
-
-        evaluation_metrics_path = os.path.join(
-            os.path.dirname(checkpoint_path), "evaluation_metrics.pkl"
-        )
-
-        if os.path.exists(evaluation_metrics_path):
-            with open(evaluation_metrics_path, "rb") as f:
-                self.evaluation_metrics = pickle.load(f)
-
-        return
-
-
-class CustomAPPO(APPO):
-    def save(
-        self, checkpoint_dir: Optional[str] = None, prevent_upload: bool = False
-    ) -> str:
-        checkpoint_path = super().save(checkpoint_dir, prevent_upload)
-        metrics_path = os.path.join(checkpoint_path, "metrics.pkl")
-
-        with open(metrics_path, "wb") as f:
-            pickle.dump(self._progress_metrics, f)
-
-        evaluation_metrics_path = os.path.join(
-            checkpoint_path, "evaluation_metrics.pkl"
-        )
-
-        with open(evaluation_metrics_path, "wb") as f:
-            pickle.dump(self.evaluation_metrics, f)
-
-        return checkpoint_path
-
-    def restore(
-        self,
-        checkpoint_path: Union[str, Checkpoint],
-        checkpoint_node_ip: Optional[str] = None,
-        fallback_to_latest: bool = False,
-    ):
-        super().restore(checkpoint_path, checkpoint_node_ip, fallback_to_latest)
-        metrics_path = os.path.join(os.path.dirname(checkpoint_path), "metrics.pkl")
-
-        if os.path.exists(metrics_path):
-            with open(metrics_path, "rb") as f:
-                self._progress_metrics = pickle.load(f)
-
-        evaluation_metrics_path = os.path.join(
-            os.path.dirname(checkpoint_path), "evaluation_metrics.pkl"
-        )
-
-        if os.path.exists(evaluation_metrics_path):
-            with open(evaluation_metrics_path, "rb") as f:
-                self.evaluation_metrics = pickle.load(f)
-
-        return
-
 
 # rl_config = {"policy_type": "MultiInputPolicy", "total_timesteps": 1_000_000}
 
@@ -352,17 +67,18 @@ def train(config: TrainingConfig) -> None:
         "discrete_actions": True,
         "continuous_speed_range": (0.0, 6.0),
         "continuous_steering_range": (-0.3, 0.3),
-        "towns": ["Town01", "Town03", "Town04", "Town06"],
-        "town_change_frequency": 10,
+        "towns": None,
+        "town_change_frequency": None,
         "concat_images": False,
         "traffic_type": TrafficType.NO_TRAFFIC,
         "concat_size": (240, 320),
     }
 
     eval_config: CarlaEnvironmentConfiguration = copy.deepcopy(carla_config)
-    eval_config["towns"] = ["Town02", "Town04", "Town05"]
-    eval_config["town_change_frequency"] = 1
+    eval_config["towns"] = None
+    eval_config["town_change_frequency"] = None
 
+    env_name = "carla_env"
     create_env = make_carla_env(
         carla_config,
         eval_config,
@@ -371,20 +87,18 @@ def train(config: TrainingConfig) -> None:
         config["weights"],
         seed=69,
     )
-
-    name = "carla_env"
-    register_env(name, create_env)
+    register_env(env_name, create_env)
 
     trainer_config = APPOConfig()  # if config["workers"] > 1 else PPOConfig()
 
-    gpu_fraction = (config["gpus"] / (workers + (2 if workers > 1 else 1))) - 0.0001
-
+    gpu_fraction = (config["gpus"] / (config["workers"])) - 0.0001
     print("GPU FRACTION: ", gpu_fraction)
 
     algo_config = (
         trainer_config.rollouts(
-            num_rollout_workers=config["workers"],
+            num_rollout_workers=config["workers"] - 1,
             num_envs_per_worker=1,
+            create_env_on_local_worker=True,
             recreate_failed_workers=False,
             ignore_worker_failures=False,
             restart_failed_sub_environments=False,
@@ -393,16 +107,18 @@ def train(config: TrainingConfig) -> None:
             worker_restore_timeout_s=60,
             num_consecutive_worker_failures_tolerance=0,
         )
+        .reporting(min_sample_timesteps_per_iteration=2048)
         .resources(
             num_gpus=gpu_fraction,
             num_gpus_per_worker=gpu_fraction,
         )
-        .environment(name)
+        .environment(env_name, disable_env_checking=True)
+        .exploration()
         .training(
             gamma=0.98,
-            lr=1e-4,
+            lr=1e-5,
             model={
-                "post_fcnet_hiddens": [1024, 512],
+                "post_fcnet_hiddens": [256],
                 "conv_filters": [
                     [16, [6, 8], [3, 4]],
                     [32, [6, 6], 4],
@@ -412,13 +128,12 @@ def train(config: TrainingConfig) -> None:
                 "framestack": True,
             },
         )
-        # .evaluation(
-        #     evaluation_interval=10,
-        #     evaluation_duration_unit="episodes",
-        #     evaluation_parallel_to_training=workers > 1,
-        #     evaluation_duration=10,
-        #     evaluation_num_workers=1 if workers > 1 else 0,
-        # )
+        .evaluation(
+            evaluation_interval=2,
+            evaluation_duration_unit="episodes",
+            evaluation_duration=5,
+            evaluation_config={"env_config": {"is_eval": True}},
+        )
         .callbacks(CustomCallback)
         .framework("torch")
     )
@@ -453,7 +168,30 @@ def train(config: TrainingConfig) -> None:
         if not checkpoints:
             should_resume = False
 
-    trainer = CustomAPPO  # if config["workers"] > 1 else PPO
+    # if not should_resume:
+    #     os.makedirs(experiment_dir, exist_ok=True)
+    #
+    # checkpoint_dir = None
+    # print("SETTING UP TRAINER")
+    # trainer = CustomAPPO(algo_config)
+    #
+    # try:
+    #     for i in range(50):
+    #         print("TRAINING STEP: ", i)
+    #         trainer.train()
+    #         checkpoint_dir = trainer.save(experiment_dir)
+    #
+    #     if checkpoint_dir is None:
+    #         raise Exception("No checkpoint directory found")
+    #
+    # except Exception as e:
+    #     trainer.stop()
+    #     raise e
+
+    # trainer.evaluate(lambda num: 25 - num)
+
+    trainer = CustomAPPO
+
     tune.run(
         trainer,
         name=run_id,
@@ -463,11 +201,14 @@ def train(config: TrainingConfig) -> None:
         # raise_on_failed_trial=True,
         checkpoint_freq=5,
         checkpoint_at_end=False,
+        keep_checkpoints_num=2,
+        checkpoint_score_attr="RouteCompletionTest_mean",
         local_dir="./models/",
         fail_fast="RAISE",
         callbacks=[
             CustomWandbLoggerCallback(
                 project="Sensor fusion AD RL",
+                group=run_id,
                 log_config=True,
                 upload_checkpoints=True,
                 resume=should_resume,
@@ -486,10 +227,12 @@ def make_carla_env(
 ) -> Callable[[Any], gym.Env]:
     def _init(env_config) -> gym.Env:
         i = env_config.worker_index - 1
-
         print("WORKER INDEX: ", i)
-        # Worker gets index 0 if it is the evaluator
-        evaluation = i < 0
+
+        # is_eval is set for evaluation workers
+        evaluation = "is_eval" in env_config and env_config["is_eval"]
+
+        print("EVALUATION: ", evaluation)
 
         episode_config = baseline_config()
         vision_module = None
@@ -530,43 +273,6 @@ def make_carla_env(
         return env
 
     return _init
-
-
-# class CustomRLlibCallback(DefaultCallbacks):
-#     episode_iteration: int = 0
-#
-#     def __init__(self, n_episodes: int = 20):
-#         self.episode_iteration = 0
-#         self.n_episodes = n_episodes
-#         return super().__init__()
-#
-#     def on_episode_start(
-#         self, worker, base_env, policies, episode, env_index, **kwargs
-#     ):
-#         if self.episode_iteration % self.n_episodes == 0:
-#             if not hasattr(self, "video_recorder"):
-#                 self.video_recorder = None
-#
-#             if self.video_recorder is None:
-#                 env = base_env.get_sub_environments(env_index)
-#                 self.video_recorder = VideoRecorder(
-#                     env, base_path=os.path.join(worker.log_dir, "video")
-#                 )
-#
-#         self.episode_iteration += 1
-#
-#     def on_episode_step(self, worker, base_env, episode, env_index, **kwargs):
-#         print("ON EPISODE STEP: ", env_index)
-#
-#         if self.video_recorder:
-#             base_env.get_sub_environments()[env_index]
-#             self.video_recorder.capture_frame()
-#
-#     def on_episode_end(self, worker, base_env, policies, episode, env_index, **kwargs):
-#         if self.video_recorder:
-#             self.video_recorder.close()
-#             wandb.log({"train_video": wandb.Video(self.video_recorder.path)})
-#             self.video_recorder = None
 
 
 def get_run_name(resume=False) -> str:

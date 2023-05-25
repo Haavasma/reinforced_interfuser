@@ -4,7 +4,7 @@ import time
 from typing import Any, Callable, List, Optional, Protocol, Set, Tuple, TypedDict
 import typing
 from PIL import Image
-from episode_manager.data import TrafficType
+from episode_manager.data import TrafficType, TrainingType
 from episode_manager.renderer import WorldStateRenderer, generate_pygame_surface
 
 from collections import deque
@@ -62,8 +62,8 @@ class CarlaEnvironmentConfiguration(TypedDict):
     speed_goal_actions: List[float]
     steering_actions: List[float]
     discrete_actions: bool
-    towns: List[str]
-    town_change_frequency: int
+    towns: Optional[List[str]]
+    town_change_frequency: Optional[int]
     concat_images: bool
     traffic_type: TrafficType
     concat_size: Tuple[int, int]
@@ -217,7 +217,11 @@ class CarlaEnvironment(gym.Env):
         self._metrics: typing.Dict[str, Any] = {}
         self._n_episodes = 0
         self._steps = 0
-        self._town = random.choice(self.config["towns"])
+        self._town: Optional[str] = None
+
+        if self.config["towns"]:
+            self._town = random.choice(self.config["towns"])
+
         self.amount_of_speed_actions = len(self.config["speed_goal_actions"])
         self.amount_of_steering_actions = len(self.config["steering_actions"])
         self._route_planner: Optional[RoutePlanner] = None
@@ -324,14 +328,21 @@ class CarlaEnvironment(gym.Env):
     def reset(self, seed=None, options=None):
         # select random town from configurations
         self._n_episodes += 1
-        if self._n_episodes % self.config["town_change_frequency"] == 0:
-            self._town = random.choice(self.config["towns"])
+
+        # Change town if needed
+        if (
+            self.config["town_change_frequency"] is not None
+            and self.config["towns"] is not None
+        ):
+            if self._n_episodes % self.config["town_change_frequency"] == 0:
+                self._town = random.choice(self.config["towns"])
 
         self._metrics = self.carla_manager.stop_episode()
         self.state, self.data = self.carla_manager.start_episode(
             town=self._town, traffic_type=self.config["traffic_type"]
         )
 
+        # Set up ruote planner with sparse waypoints
         self._route_planner = RoutePlanner()
         self._route_planner.set_route(self.data.global_plan, True)
         if self.vision_module is not None:
@@ -466,6 +477,21 @@ class CarlaEnvironment(gym.Env):
         """"""
         return np.array([0.0])
 
+    def stop_server(self):
+        print("STOPPING SERVER")
+        self.carla_manager.close()
+
+    # def start_server(self):
+    #     print("STARTING SERVER")
+    #     self.carla_manager.reset()
+
+    def set_mode(self, training_type: TrainingType):
+        """
+        Change the type of routes that the episode manager will use
+        """
+        self.carla_manager.config.training_type = training_type
+        return
+
     def step(self, action):
         goal_speed = 0.0
         steering = 0.0
@@ -499,7 +525,7 @@ class CarlaEnvironment(gym.Env):
 
         new_action = Action(throttle, brake, reverse, steering)
 
-        print("NEW ACTION: ", new_action, "\nGOAL SPEED: ", goal_speed)
+        # print("NEW ACTION: ", new_action, "\nGOAL SPEED: ", goal_speed)
 
         if self.vision_module is not None:
             new_action = self.vision_module.postprocess_action(new_action)

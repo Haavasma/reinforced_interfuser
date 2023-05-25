@@ -30,13 +30,12 @@ echo "We are using $SLURM_CPUS_ON_NODE cores"
 echo "We are using $SLURM_CPUS_ON_NODE cores per node"
 echo "Total of $SLURM_NTASKS cores"
 
-module purge
-module load Anaconda3/2020.07
-eval "$(conda shell.bash hook)"
-conda activate rl_train
+# module purge
+# module load Anaconda3/2020.07
+# eval "$(conda shell.bash hook)"
+# conda activate rl_train
 
-
-workers=3
+workers=1
 gpus=1
 python train_RL_lib.py --workers $workers --gpus $gpus --no-traffic
 pkill -f CarlaUE4
