@@ -57,7 +57,12 @@ def validate_training_config(config: TrainingConfig) -> None:
 def train(config: TrainingConfig) -> None:
     validate_training_config(config)
 
+    run_type = (
+        "baseline" if config["vision_module"] == "" else config["vision_module"]
+    ) + (f"_{config['traffic_type'].name}")
+
     run_id = get_run_name(
+        run_type,
         resume=config["resume"],
     )
 
@@ -116,9 +121,9 @@ def train(config: TrainingConfig) -> None:
         .exploration()
         .training(
             gamma=0.98,
-            lr=1e-5,
+            lr=5e-4,
             model={
-                "post_fcnet_hiddens": [256],
+                "post_fcnet_hiddens": [1024, 512, 256],
                 "conv_filters": [
                     [16, [6, 8], [3, 4]],
                     [32, [6, 6], 4],
@@ -131,7 +136,7 @@ def train(config: TrainingConfig) -> None:
         .evaluation(
             evaluation_interval=10,
             evaluation_duration_unit="episodes",
-            evaluation_duration=5,
+            evaluation_duration=10,
             evaluation_config={"env_config": {"is_eval": True}},
         )
         .callbacks(CustomCallback)
@@ -199,16 +204,17 @@ def train(config: TrainingConfig) -> None:
         stop={"timesteps_total": config["steps"]},
         resume="LOCAL+ERRORED" if should_resume else False,
         # raise_on_failed_trial=True,
-        checkpoint_freq=5,
+        checkpoint_freq=1,
         checkpoint_at_end=False,
         keep_checkpoints_num=2,
-        checkpoint_score_attr="RouteCompletionTest_mean",
+        trial_name_creator=lambda _: run_id,
+        # checkpoint_score_attr="episode_reward_mean",
         local_dir="./models/",
         fail_fast="RAISE",
         callbacks=[
             CustomWandbLoggerCallback(
                 project="Sensor fusion AD RL",
-                group=run_id,
+                group="RL Final runs",
                 log_config=True,
                 upload_checkpoints=True,
                 resume=should_resume,
@@ -257,7 +263,7 @@ def make_carla_env(
         )
 
         episode_manager = EpisodeManager(
-            episode_config, gpu_device=i % gpus, server_wait_time=10 + ((i + 1) * 10)
+            episode_config, gpu_device=i % gpus, server_wait_time=15 + ((i + 1) * 10)
         )
         speed_controller = TestSpeedController()
 
@@ -275,13 +281,13 @@ def make_carla_env(
     return _init
 
 
-def get_run_name(resume=False) -> str:
+def get_run_name(run_type: str, resume=False) -> str:
     run_id = ""
     if resume:
         with open("./models/run_name.pkl", "rb") as f:
             run_id = pickle.load(f)
     else:
-        run_id = uuid.uuid4().hex
+        run_id = f"{run_type}_{uuid.uuid4().hex}"
 
     with open("./models/run_name.pkl", "wb") as f:
         pickle.dump(run_id, f)
