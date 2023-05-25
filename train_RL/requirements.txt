@@ -17,5 +17,9 @@ mmdet==2.25.0
 pandas==1.5.1
 dm_tree==0.1.8
 lz4==4.3.2
-easydict==^1.10
-moviepy==^1.0.3
+easydict==1.10
+moviepy==1.0.3
+gymnasium==0.26.3
+ray==2.3.1
+pandas==1.5.1
+
