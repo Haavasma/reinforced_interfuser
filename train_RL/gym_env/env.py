@@ -18,42 +18,8 @@ from gymnasium.utils import seeding
 from srunner.tools.route_parser import RoadOption
 
 from gym_env.route_planner import RoutePlanner, find_relative_target_waypoint
-
-
-class VisionModule(Protocol):
-    """
-    Defines protocol (interface) for a vision module that is injected to
-    the environment to provide vision encoding and selected action postprocessing
-    """
-
-    output_shape: Tuple
-    high: float
-    low: float
-
-    def __call__(self, input: WorldState) -> np.ndarray:
-        """
-        Returns the vision module encoded vector output based on the current step's world
-        state information
-        """
-
-        return np.zeros((self.output_shape))
-
-    def postprocess_action(self, action: Action) -> Action:
-        """
-        Perform any postprocessing on the action based on stored auxilliary information from the vision module
-        """
-        # return the same action by default
-
-        return action
-
-    def get_auxilliary_render(self) -> pygame.Surface:
-        """
-        Returns a pygame surface that visualizes auxilliary predections from the vision module
-        """
-        raise NotImplementedError
-
-    def set_global_plan(self, global_plan: List[Any]):
-        raise NotImplementedError
+from gym_env.vision import VisionModule
+from vision_modules.interfuser import create_carla_rgb_transform
 
 
 class CarlaEnvironmentConfiguration(TypedDict):
@@ -66,7 +32,8 @@ class CarlaEnvironmentConfiguration(TypedDict):
     town_change_frequency: Optional[int]
     concat_images: bool
     traffic_type: TrafficType
-    concat_size: Tuple[int, int]
+    image_resize: Tuple[int, int]
+    blind_ablation: bool
 
 
 def default_config() -> CarlaEnvironmentConfiguration:
@@ -80,7 +47,8 @@ def default_config() -> CarlaEnvironmentConfiguration:
         "town_change_frequency": 10,
         "concat_images": False,
         "traffic_type": TrafficType.SCENARIO,
-        "concat_size": (480, 640),
+        "image_resize": (224, 224),
+        "blind_ablation": False,
     }
 
 
@@ -228,6 +196,8 @@ class CarlaEnvironment(gym.Env):
         self.metadata["render_fps"] = 10
         self._reward: Optional[float] = None
 
+        self._rgb_transform = create_carla_rgb_transform(self.config["image_resize"])
+
         print("INITIALIZING ENVIRONMENT")
 
         if self.config["discrete_actions"]:
@@ -279,25 +249,28 @@ class CarlaEnvironment(gym.Env):
 
         camera_configs = self.carla_manager.config.car_config.cameras
 
+        shape = (self.config["image_resize"][0], self.config["image_resize"][1], 3)
+
         if self.config["concat_images"]:
             height = camera_configs[0]["height"]
             assert all(camera["height"] == height for camera in camera_configs)
+
             observation_space_dict["image"] = Box(
-                low=0,
-                high=255,
-                shape=(self.config["concat_size"][0], self.config["concat_size"][1], 3),
-                dtype=np.uint8,
+                low=-np.inf,
+                high=np.inf,
+                shape=shape,
+                dtype=np.float32,
             )
         else:
-            for index, camera in enumerate(camera_configs):
+            for index, _ in enumerate(camera_configs):
                 observation_space_dict[f"image_{index}"] = Box(
-                    low=0,
-                    high=255,
-                    shape=(camera["height"], camera["width"], 3),
-                    dtype=np.uint8,
+                    low=-np.inf,
+                    high=np.inf,
+                    shape=shape,
+                    dtype=np.float32,
                 )
 
-        observation_space_dict["state"] = self._state_observation_space()
+        observation_space_dict = self._state_observation_space(observation_space_dict)
 
         return observation_space_dict
 
@@ -314,16 +287,22 @@ class CarlaEnvironment(gym.Env):
             ),
         }
 
-        observation_space_dict["state"] = self._state_observation_space()
+        observation_space_dict = self._state_observation_space(observation_space_dict)
 
         return observation_space_dict
 
-    def _state_observation_space(self) -> Box:
-        return Box(
-            low=np.array([-2.0, -10.0, -10.0, 0, 0, 0, 0, 0, 0]),
-            high=np.array([10.0, 10.0, 10.0, 1, 1, 1, 1, 1, 1]),
+    def _state_observation_space(self, observation_space_dict: dict) -> dict:
+        observation_space_dict["state"] = Box(
+            low=np.array([-2.0, -10.0, -10.0]),
+            high=np.array([10.0, 10.0, 10.0]),
             dtype=np.float32,
         )
+
+        observation_space_dict["command"] = Box(
+            low=0, high=1, shape=(6,), dtype=np.int32
+        )
+
+        return observation_space_dict
 
     def reset(self, seed=None, options=None):
         # select random town from configurations
@@ -395,17 +374,29 @@ class CarlaEnvironment(gym.Env):
                 axis=1,
             )
 
-            observation["image"] = np.array(
-                Image.fromarray(concat_array).resize(
-                    (self.config["concat_size"][1], self.config["concat_size"][0])
-                )
+            image = (
+                self._rgb_transform(Image.fromarray(concat_array))
+                .numpy()
+                .transpose(1, 2, 0)
             )
-            print("OBSERVATION SHAPE: ", observation["image"].shape)
+
+            if self.config["blind_ablation"]:
+                image = np.zeros_like(image)
+
+            observation["image"] = image
+
         else:
             for index, image in enumerate(
                 self.state.ego_vehicle_state.sensor_data.images
             ):
-                observation[f"image_{index}"] = image[:, :, :3]
+                im = image[:, :, :3]
+                image = (
+                    self._rgb_transform(Image.fromarray(im)).numpy().transpose(1, 2, 0)
+                )
+                if self.config["blind_ablation"]:
+                    image = np.zeros_like(image)
+
+                observation[f"image_{index}"] = image
 
         if self.carla_manager.config.car_config.lidar["enabled"]:
             observation[
@@ -464,12 +455,12 @@ class CarlaEnvironment(gym.Env):
             (
                 np.array([self.state.ego_vehicle_state.speed]),
                 relative_target_waypoint,
-                command,
             ),
             axis=0,
         )
 
         observation["state"] = state
+        observation["command"] = command
 
         return observation
 
@@ -543,6 +534,11 @@ class CarlaEnvironment(gym.Env):
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
+
+
+def transform_image(image: np.ndarray, shape: tuple):
+    # Resize image and transpose it to have channels first (CHW format)
+    return np.array(Image.fromarray(image).resize(shape)).transpose(2, 0, 1)
 
 
 def shift_x_scale_crop(image, scale, crop, crop_shift=0):

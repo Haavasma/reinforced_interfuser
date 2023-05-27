@@ -13,6 +13,7 @@ from episode_manager.data import TrafficType
 from episode_manager.episode_manager import TrainingType
 from ray import tune
 from ray.rllib.algorithms.appo import APPOConfig
+from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
 
 from config import GlobalConfig
@@ -25,6 +26,7 @@ from gym_env.env import (
 from reward_functions.main import reward_function
 from rl_lib.appo import CustomAPPO
 from rl_lib.callback import CustomCallback
+from rl_lib.complex_input_network import ConditionalComplexInputNetwork
 from rl_lib.wandb_logging import CustomWandbLoggerCallback
 from vision_modules.interfuser import InterFuserVisionModule
 from vision_modules.transfuser import TransfuserVisionModule, setup_transfuser_backbone
@@ -66,8 +68,6 @@ def train(config: TrainingConfig) -> None:
         resume=config["resume"],
     )
 
-    run_id = "baseline_NO_TRAFFIC_847cdfd633bb4a78b9d1ffacb598c1d5"
-
     carla_config: CarlaEnvironmentConfiguration = {
         "speed_goal_actions": [0.0, 2.0, 4.0],
         "steering_actions": np.linspace(-0.5, 0.5, 31).tolist(),
@@ -77,8 +77,9 @@ def train(config: TrainingConfig) -> None:
         "towns": None,
         "town_change_frequency": None,
         "concat_images": False,
-        "traffic_type": TrafficType.NO_TRAFFIC,
-        "concat_size": (240, 320),
+        "traffic_type": config["traffic_type"],
+        "image_resize": (100, 200),
+        "blind_ablation": False,
     }
 
     eval_config: CarlaEnvironmentConfiguration = copy.deepcopy(carla_config)
@@ -96,12 +97,16 @@ def train(config: TrainingConfig) -> None:
     )
     register_env(env_name, create_env)
 
-    trainer_config = APPOConfig()  # if config["workers"] > 1 else PPOConfig()
+    trainer_config = APPOConfig()
 
     #gpu_fraction = (config["gpus"] / (config["workers"] + (1 if config["workers"] > 1 else 0))) - 0.0001
     fraction = ((config["gpus"]) / (config["workers"] + 2))
 
     print("FRACTION: ", fraction)
+
+    ModelCatalog.register_custom_model(
+        "conditional_net", ConditionalComplexInputNetwork
+    )
 
     algo_config = (
         trainer_config.rollouts(
@@ -124,9 +129,10 @@ def train(config: TrainingConfig) -> None:
         .environment(env_name, disable_env_checking=True)
         .exploration()
         .training(
-            gamma=0.98,
-            lr=5e-4,
+            gamma=0.95,
+            lr=3e-4,
             model={
+                "custom_model": "conditional_net",
                 "post_fcnet_hiddens": [1024, 512, 256],
                 "conv_filters": [
                     [16, [6, 8], [3, 4]],
@@ -135,6 +141,7 @@ def train(config: TrainingConfig) -> None:
                 ],
                 "use_attention": False,
                 "framestack": True,
+                "custom_model_config": {"num_conditional_inputs": 6},
             },
         )
         .evaluation(
@@ -228,7 +235,7 @@ def train(config: TrainingConfig) -> None:
         callbacks=[
             CustomWandbLoggerCallback(
                 project="Sensor fusion AD RL",
-                group="RL Final runs",
+                group=run_id,
                 log_config=True,
                 upload_checkpoints=True,
                 resume=should_resume,

@@ -51,7 +51,7 @@ def interfuser_config() -> EpisodeManagerConfiguration:
     return EpisodeManagerConfiguration()
 
 
-_baseline_image_size = (160, 120)
+_baseline_image_size = (600, 300)
 
 
 def baseline_config() -> EpisodeManagerConfiguration:
