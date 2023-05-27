@@ -507,12 +507,13 @@ class CarlaEnvironment(gym.Env):
         goal_speed = float(goal_speed)
         steering = float(steering)
 
-        if goal_speed > 3.0:
-            steering = steering * 0.5
-
         throttle, brake, reverse = self.speed_controller(
             goal_speed, self.state.ego_vehicle_state.speed
         )
+
+        if brake >= 1.0:
+            steering *= 0.5
+            throttle = 0.0
 
         new_action = Action(throttle, brake, reverse, steering)
 
