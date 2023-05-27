@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 import torch
 from episode_manager.episode_manager import Action, WorldState
-from gym_env.env import VisionModule, WorldState
+from gym_env.vision import VisionModule
 from leaderboard.autoagents import autonomous_agent
 from PIL import Image
 from team_code.interfuser_config import GlobalConfig
@@ -21,6 +21,7 @@ from team_code.render import render, render_self_car, render_waypoints
 from team_code.tracker import Tracker
 from timm.models import create_model
 from torchvision import transforms
+
 
 SAVE_PATH = None
 IMAGENET_DEFAULT_MEAN = (0.485, 0.456, 0.406)
@@ -431,7 +432,7 @@ class InterFuserVisionModule(VisionModule):
 
 def create_carla_rgb_transform(
     input_size, need_scale=True, mean=IMAGENET_DEFAULT_MEAN, std=IMAGENET_DEFAULT_STD
-):
+) -> transforms.Compose:
     if isinstance(input_size, (tuple, list)):
         img_size = input_size[-2:]
     else:
@@ -453,7 +454,8 @@ def create_carla_rgb_transform(
         elif input_size_num == 256:
             tfl.append(Resize2FixedSize((288, 288)))
         else:
-            raise ValueError("Can't find proper crop size")
+            tfl.append(Resize2FixedSize(input_size))
+            # raise ValueError("Can't find proper crop size")
     tfl.append(transforms.CenterCrop(img_size))
     tfl.append(transforms.ToTensor())
     tfl.append(transforms.Normalize(mean=torch.tensor(mean), std=torch.tensor(std)))
