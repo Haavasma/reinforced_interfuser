@@ -66,6 +66,8 @@ def train(config: TrainingConfig) -> None:
         resume=config["resume"],
     )
 
+    run_id = "baseline_NO_TRAFFIC_847cdfd633bb4a78b9d1ffacb598c1d5"
+
     carla_config: CarlaEnvironmentConfiguration = {
         "speed_goal_actions": [0.0, 2.0, 4.0],
         "steering_actions": np.linspace(-0.5, 0.5, 31).tolist(),
@@ -96,12 +98,14 @@ def train(config: TrainingConfig) -> None:
 
     trainer_config = APPOConfig()  # if config["workers"] > 1 else PPOConfig()
 
-    gpu_fraction = (config["gpus"] / (config["workers"])) - 0.0001
-    print("GPU FRACTION: ", gpu_fraction)
+    #gpu_fraction = (config["gpus"] / (config["workers"] + (1 if config["workers"] > 1 else 0))) - 0.0001
+    fraction = ((config["gpus"]) / (config["workers"] + 2))
+
+    print("FRACTION: ", fraction)
 
     algo_config = (
         trainer_config.rollouts(
-            num_rollout_workers=config["workers"] - 1,
+            num_rollout_workers=config["workers"] if config["workers"] > 1 else 0,
             num_envs_per_worker=1,
             create_env_on_local_worker=True,
             recreate_failed_workers=False,
@@ -114,8 +118,8 @@ def train(config: TrainingConfig) -> None:
         )
         .reporting(min_sample_timesteps_per_iteration=2048)
         .resources(
-            num_gpus=gpu_fraction,
-            num_gpus_per_worker=gpu_fraction,
+            num_gpus=fraction,
+            num_gpus_per_worker=fraction,
         )
         .environment(env_name, disable_env_checking=True)
         .exploration()
@@ -146,8 +150,10 @@ def train(config: TrainingConfig) -> None:
     experiment_dir = os.path.join("./models", run_id)
     should_resume = config["resume"]
 
+    checkpoint = ""
+
     if should_resume:
-        checkpoints = False
+        has_checkpoints = False
         if not os.path.exists(experiment_dir):
             print(f"No experiment directory found at {experiment_dir}")
             should_resume = False
@@ -157,21 +163,28 @@ def train(config: TrainingConfig) -> None:
                 print(f"TRIAL PATH: {trial_path}")
                 if os.path.isdir(trial_path):
                     print(f"SUBDIRS: {os.listdir(trial_path)}")
-                    checkpoints = [
+                    tmp_checkpoints = [
                         entry
                         for entry in os.listdir(trial_path)
                         if entry.startswith("checkpoint_")
                     ]
 
-                    if checkpoints:
+                    if len(tmp_checkpoints) > 0:
+                        tmp_checkpoints.sort()
+                        if checkpoint == "" or tmp_checkpoints[-1] > checkpoint:
+                            checkpoint = os.path.join(trial_path, tmp_checkpoints[-1])
+                            print("NEW CHECKPOINT: ", checkpoint)
+
                         print(
-                            f"Trial {trial_dir} has the following checkpoints: {checkpoints}"
+                            f"Trial {trial_dir} has the following checkpoints: {tmp_checkpoints}"
                         )
-                        checkpoints = True
+                        has_checkpoints = True
                     else:
                         print(f"Trial {trial_dir} has no checkpoints")
-        if not checkpoints:
+        if not has_checkpoints:
             should_resume = False
+
+    print("FINAL CHECKPOINT: ", checkpoint)
 
     # if not should_resume:
     #     os.makedirs(experiment_dir, exist_ok=True)
@@ -202,11 +215,12 @@ def train(config: TrainingConfig) -> None:
         name=run_id,
         config=algo_config.to_dict(),
         stop={"timesteps_total": config["steps"]},
-        resume="LOCAL+ERRORED" if should_resume else False,
+        resume=True if should_resume else False,
         # raise_on_failed_trial=True,
         checkpoint_freq=1,
         checkpoint_at_end=False,
-        keep_checkpoints_num=2,
+        keep_checkpoints_num=5,
+        restore=checkpoint if should_resume else None,
         trial_name_creator=lambda _: run_id,
         # checkpoint_score_attr="episode_reward_mean",
         local_dir="./models/",
