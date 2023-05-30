@@ -13,7 +13,7 @@
 
 
 WORKDIR=${SLURM_SUBMIT_DIR}
-WANDB_CACHE_DIR=./wandb_cache/
+export WANDB_CACHE_DIR=./wandb_cache/
 
 if [ ! -z "$WORKDIR" ]
 then
@@ -34,9 +34,9 @@ echo "Total of $SLURM_NTASKS cores"
 # source /cluster/home/haavasma/master/rl_train/bin/activate
 
 
-workers=4
+workers=6
 gpus=2
-python train_RL_lib.py --workers $workers --gpus $gpus --vision-module interfuser --weights ./models/model_best.pth.tar  --no-traffic 
+python train_RL_lib.py --workers $workers --gpus $gpus --vision-module interfuser --weights ./models/model_best.pth.tar  --no-traffic --resume
 pkill -f CarlaUE4
 pkill -f CarlaUE4
 pkill -f ray::RolloutWorker
