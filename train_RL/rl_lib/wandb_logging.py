@@ -85,21 +85,28 @@ class CustomWandbLoggerCallback(WandbLoggerCallback):
         )
 
     def log_trial_result(self, iteration: int, trial: Trial, result: Dict):
-        videos = glob.glob("./videos/*.mp4")
+        path = str(pathlib.Path("./videos/").absolute().resolve())
+        video_path = os.path.join(str(trial.logdir), "videos")
+        videos = glob.glob(os.path.join(path, "*.mp4")) + glob.glob(
+            os.path.join(video_path, "*.mp4")
+        )
+
         videos.sort()
+        processed_path = os.path.join(str(trial.logdir), "videos_processed")
+
         if len(videos) > 0:
             for video in videos:
-                # move videos to trial specific folder
+                # move videos to trial specific processed folder
                 video_name = os.path.basename(video)
-                video_path = os.path.join(str(trial.logdir), "videos", video_name)
-                pathlib.Path(os.path.dirname(video_path)).mkdir(
+                processed_file_name = os.path.join(processed_path, video_name)
+                pathlib.Path(os.path.dirname(processed_file_name)).mkdir(
                     parents=True, exist_ok=True
                 )
 
-                print(f"MOVING {video} to {video_path}")
-                os.rename(video, video_path)
+                print(f"MOVING {video} to {processed_file_name}")
+                os.rename(video, processed_file_name)
                 self._trial_queues[trial].put(
-                    ("VIDEO", wandb.Video(video_path, fps=10, format="mp4"))
+                    ("VIDEO", wandb.Video(processed_file_name, fps=10, format="mp4"))
                 )
 
         return super().log_trial_result(iteration, trial, result)

@@ -29,6 +29,7 @@ from rl_lib.callback import CustomCallback
 from rl_lib.complex_input_network import ConditionalComplexInputNetwork
 from rl_lib.wandb_logging import CustomWandbLoggerCallback
 from vision_modules.interfuser import InterFuserVisionModule
+from vision_modules.interfuser_pretrained import InterFuserPretrainedVisionModule
 from vision_modules.transfuser import TransfuserVisionModule, setup_transfuser_backbone
 
 # rl_config = {"policy_type": "MultiInputPolicy", "total_timesteps": 1_000_000}
@@ -43,6 +44,7 @@ class TrainingConfig(TypedDict):
     weights: str
     steps: int
     traffic_type: TrafficType
+    blind_ablation: bool
 
 
 def validate_training_config(config: TrainingConfig) -> None:
@@ -60,13 +62,19 @@ def train(config: TrainingConfig) -> None:
     validate_training_config(config)
 
     run_type = (
-        "baseline" if config["vision_module"] == "" else config["vision_module"]
-    ) + (f"_{config['traffic_type'].name}")
+        (
+            "baseline" if config["vision_module"] == "" else config["vision_module"]
+        )  # Vision type
+        + (f"_{config['traffic_type'].name}")  # Traffic type
+        + (f"{'_blind' if config['blind_ablation'] else ''}")  # Blind ablation
+    )
 
     run_id = get_run_name(
         run_type,
         resume=config["resume"],
     )
+
+    # run_id = "baseline_NO_TRAFFIC_5b6f404e2a0447839d0e52460fc7c12c"
 
     carla_config: CarlaEnvironmentConfiguration = {
         "speed_goal_actions": [0.0, 2.0, 4.0],
@@ -79,7 +87,6 @@ def train(config: TrainingConfig) -> None:
         "concat_images": False,
         "traffic_type": config["traffic_type"],
         "image_resize": (100, 200),
-        "blind_ablation": False,
     }
 
     eval_config: CarlaEnvironmentConfiguration = copy.deepcopy(carla_config)
@@ -94,13 +101,14 @@ def train(config: TrainingConfig) -> None:
         config["vision_module"],
         config["weights"],
         seed=69,
+        blind=config["blind_ablation"],
     )
     register_env(env_name, create_env)
 
     trainer_config = APPOConfig()
 
-    #gpu_fraction = (config["gpus"] / (config["workers"] + (1 if config["workers"] > 1 else 0))) - 0.0001
-    fraction = ((config["gpus"]) / (config["workers"] + 2))
+    # gpu_fraction = (config["gpus"] / (config["workers"] + (1 if config["workers"] > 1 else 0))) - 0.0001
+    fraction = (config["gpus"]) / (config["workers"] + 2)
 
     print("FRACTION: ", fraction)
 
@@ -192,29 +200,6 @@ def train(config: TrainingConfig) -> None:
             should_resume = False
 
     print("FINAL CHECKPOINT: ", checkpoint)
-
-    # if not should_resume:
-    #     os.makedirs(experiment_dir, exist_ok=True)
-    #
-    # checkpoint_dir = None
-    # print("SETTING UP TRAINER")
-    # trainer = CustomAPPO(algo_config)
-    #
-    # try:
-    #     for i in range(50):
-    #         print("TRAINING STEP: ", i)
-    #         trainer.train()
-    #         checkpoint_dir = trainer.save(experiment_dir)
-    #
-    #     if checkpoint_dir is None:
-    #         raise Exception("No checkpoint directory found")
-    #
-    # except Exception as e:
-    #     trainer.stop()
-    #     raise e
-
-    # trainer.evaluate(lambda num: 25 - num)
-
     trainer = CustomAPPO
 
     tune.run(
@@ -251,6 +236,7 @@ def make_carla_env(
     vision_module_name: str,
     weights_file: str,
     seed: int = 0,
+    blind: bool = False,
 ) -> Callable[[Any], gym.Env]:
     def _init(env_config) -> gym.Env:
         i = env_config.worker_index
@@ -260,8 +246,12 @@ def make_carla_env(
         evaluation = "is_eval" in env_config and env_config["is_eval"]
 
         print("EVALUATION: ", evaluation)
-
         episode_config = baseline_config()
+        if blind:
+            print("BLIND MODE: ")
+            episode_config.car_config.cameras = []
+            episode_config.car_config.lidar["enabled"] = False
+
         vision_module = None
 
         if vision_module_name == "transfuser":
@@ -273,7 +263,17 @@ def make_carla_env(
         elif vision_module_name == "interfuser":
             vision_module = InterFuserVisionModule(
                 weights_file,
+                use_target_feature=False,
+                render_imitation=False,
+                postprocess=False,
+            )
+            episode_config = interfuser_config()
+
+        elif vision_module_name == "interfuser_pretrained":
+            vision_module = InterFuserPretrainedVisionModule(
+                weights_file,
                 use_target_feature=True,
+                # use_imitation_action=True,
                 render_imitation=False,
                 postprocess=False,
             )
@@ -350,6 +350,12 @@ if __name__ == "__main__":
         help="deactivates challenging scenarios during training (default: False)",
     )
 
+    parser.add_argument(
+        "--blind",
+        action="store_true",
+        help="Removes all sensors",
+    )
+
     parser.add_argument("--steps", type=int, default=1_000_000, help="Number of steps")
 
     parser.add_argument("--weights", type=str, default="", help="Path to weights file")
@@ -384,5 +390,6 @@ if __name__ == "__main__":
             "eval": True,
             "steps": steps,
             "traffic_type": traffic_type,
+            "blind_ablation": args.blind,
         }
     )
