@@ -33,7 +33,6 @@ class CarlaEnvironmentConfiguration(TypedDict):
     concat_images: bool
     traffic_type: TrafficType
     image_resize: Tuple[int, int]
-    blind_ablation: bool
 
 
 def default_config() -> CarlaEnvironmentConfiguration:
@@ -48,7 +47,6 @@ def default_config() -> CarlaEnvironmentConfiguration:
         "concat_images": False,
         "traffic_type": TrafficType.SCENARIO,
         "image_resize": (224, 224),
-        "blind_ablation": False,
     }
 
 
@@ -329,7 +327,7 @@ class CarlaEnvironment(gym.Env):
 
         return self._get_obs(), self._metrics
 
-    def render(self, mode="computer") -> Optional[np.ndarray]:
+    def render(self, mode="vision_module") -> Optional[np.ndarray]:
         if mode == "human":
             if self._renderer is None:
                 self._renderer = WorldStateRenderer()
@@ -380,9 +378,6 @@ class CarlaEnvironment(gym.Env):
                 .transpose(1, 2, 0)
             )
 
-            if self.config["blind_ablation"]:
-                image = np.zeros_like(image)
-
             observation["image"] = image
 
         else:
@@ -393,8 +388,6 @@ class CarlaEnvironment(gym.Env):
                 image = (
                     self._rgb_transform(Image.fromarray(im)).numpy().transpose(1, 2, 0)
                 )
-                if self.config["blind_ablation"]:
-                    image = np.zeros_like(image)
 
                 observation[f"image_{index}"] = image
 

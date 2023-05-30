@@ -101,6 +101,9 @@ def _calculate_angle_reward(diff: float) -> float:
 
     reward = (max_diff - diff) / max_diff
 
+    reward = min(reward, 1.0)
+    reward = max(reward, 0.0)
+
     return reward
 
 

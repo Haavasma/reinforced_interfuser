@@ -1,4 +1,5 @@
 import os
+import pathlib
 import time
 import uuid
 from typing import Any, Dict, Optional, Union
@@ -13,14 +14,17 @@ from ray.rllib.evaluation.episode_v2 import EpisodeV2
 from ray.rllib.policy import Policy
 from ray.rllib.utils.typing import PolicyID
 
-N_EPISODES_PER_VIDEO_ITERATION = 50
+N_EPISODES_PER_VIDEO_ITERATION = 30
 
 
 class CustomCallback(DefaultCallbacks):
     episode_iteration: Dict[int, int] = {}
 
     def __init__(self, legacy_callbacks_dict: Dict[str, Any] = None):
-        self.path = "./videos/"
+        path = str(pathlib.Path("./videos/").absolute().resolve())
+
+        self.path = str(pathlib.Path(path).absolute().resolve())
+
         self.video_recorder: Optional[VideoRecorder] = None
         if not os.path.exists(self.path):
             os.makedirs(self.path)
