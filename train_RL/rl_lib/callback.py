@@ -13,12 +13,13 @@ from ray.rllib.evaluation.episode import Episode
 from ray.rllib.evaluation.episode_v2 import EpisodeV2
 from ray.rllib.policy import Policy
 from ray.rllib.utils.typing import PolicyID
+import random
 
-N_EPISODES_PER_VIDEO_ITERATION = 10
+N_EPISODES_PER_VIDEO_ITERATION = 50
 
 
 class CustomCallback(DefaultCallbacks):
-    episode_iteration: Dict[int, int] = {}
+    # episode_iteration: Dict[int, int] = {}
 
     def __init__(self, legacy_callbacks_dict: Dict[str, Any] = None):
         path = str(pathlib.Path("./videos/").absolute().resolve())
@@ -56,9 +57,9 @@ class CustomCallback(DefaultCallbacks):
 
         index = env_index if env_index is not None else 0
 
-        iteration = self.episode_iteration.get(index, 0) + 1
+        # iteration = self.episode_iteration.get(index, 0) + 1
 
-        if iteration % N_EPISODES_PER_VIDEO_ITERATION == 0:
+        if random.randint(1, N_EPISODES_PER_VIDEO_ITERATION) == 1:
             if self.video_recorder is None:
                 env = base_env.get_sub_environments()[index]
 
@@ -68,11 +69,6 @@ class CustomCallback(DefaultCallbacks):
                         self.path, f"{int(time.time())}_{uuid.uuid4()}"
                     ),
                 )
-
-        if index in self.episode_iteration:
-            self.episode_iteration[index] += 1
-        else:
-            self.episode_iteration[index] = 1
 
         return super().on_episode_start(
             worker=worker,

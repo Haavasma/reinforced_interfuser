@@ -152,12 +152,12 @@ def train(config: TrainingConfig) -> None:
                 "custom_model_config": {"num_conditional_inputs": 6},
             },
         )
-        .evaluation(
-            evaluation_interval=10,
-            evaluation_duration_unit="episodes",
-            evaluation_duration=10,
-            evaluation_config={"env_config": {"is_eval": True}},
-        )
+        # .evaluation(
+        #    evaluation_interval=10,
+        #    evaluation_duration_unit="episodes",
+        #    evaluation_duration=10,
+        #    evaluation_config={"env_config": {"is_eval": True}},
+        #)
         .callbacks(CustomCallback)
         .framework("torch")
     )
