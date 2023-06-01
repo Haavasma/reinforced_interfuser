@@ -34,9 +34,9 @@ echo "Total of $SLURM_NTASKS cores"
 # source /cluster/home/haavasma/master/rl_train/bin/activate
 
 
-workers=6
+workers=4
 gpus=2
-python train_RL_lib.py --workers $workers --gpus $gpus --vision-module interfuser --weights ./models/model_best.pth.tar  --no-traffic 
+python train_RL_lib.py --workers $workers --gpus $gpus --vision-module interfuser_pretrained --weights ./models/interfuser.pth.tar --no-scenarios
 pkill -f CarlaUE4
 pkill -f CarlaUE4
 pkill -f ray::RolloutWorker
@@ -44,7 +44,7 @@ pkill -f ray::RolloutWorker
 
 while true
   do 
-python train_RL_lib.py --workers $workers --gpus $gpus --vision-module interfuser --weights ./models/model_best.pth.tar --no-traffic --resume 
+python train_RL_lib.py --workers $workers --gpus $gpus --vision-module interfuser_pretrained --weights ./models/interfuser.pth.tar --no-scenarios --resume
   pkill -f CarlaUE4
   pkill -f CarlaUE4
   pkill -f ray::RolloutWorker
