@@ -196,6 +196,8 @@ class CarlaEnvironment(gym.Env):
 
         self._rgb_transform = create_carla_rgb_transform(self.config["image_resize"])
 
+        self._prev_obs: Optional[Dict] = None
+
         print("INITIALIZING ENVIRONMENT")
 
         if self.config["discrete_actions"]:
@@ -327,7 +329,7 @@ class CarlaEnvironment(gym.Env):
 
         return self._get_obs(), self._metrics
 
-    def render(self, mode="vision_module") -> Optional[np.ndarray]:
+    def render(self, mode="computer") -> Optional[np.ndarray]:
         if mode == "human":
             if self._renderer is None:
                 self._renderer = WorldStateRenderer()
@@ -345,6 +347,10 @@ class CarlaEnvironment(gym.Env):
             if self._reward is not None:
                 additional_text["Reward: "] = self._reward
 
+            if self._prev_obs is not None:
+                additional_text["State: "] = self._prev_obs["state"]
+                additional_text["COMMAND: "] = self._prev_obs["command"]
+
             pygame_surface = generate_pygame_surface(
                 self.state,
                 additional_text=additional_text,
@@ -354,11 +360,13 @@ class CarlaEnvironment(gym.Env):
             return np_array
 
     def _get_obs(self):
-        return (
+        self._prev_obs = (
             self._get_obs_without_vision()
             if self.vision_module is None
             else self._get_obs_with_vision()
         )
+
+        return self._prev_obs
 
     def _get_obs_without_vision(self):
         observation = self._setup_observation_state()
