@@ -70,6 +70,7 @@ def reward_function(state: WorldState, data: ScenarioData) -> Tuple[float, bool]
         angle, math.radians(state.ego_vehicle_state.compass - 90)
     )
     angle_reward = _calculate_angle_reward(angle_diff)
+    angle_reward = min(1.0, angle_reward)
     if angle_reward < 0:
         return -10, True
 

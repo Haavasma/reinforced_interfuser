@@ -524,6 +524,7 @@ class CarlaEnvironment(gym.Env):
             new_action = self.vision_module.postprocess_action(new_action)
 
         # update state with result of using the new action
+
         self.state = self.carla_manager.step(new_action)
 
         self._reward, done = self.reward_function(self.state, self.data)

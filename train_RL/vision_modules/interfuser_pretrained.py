@@ -190,6 +190,7 @@ class InterFuserPretrainedVisionModule(VisionModule):
         local_command_point = np.array([next_wp[0] - pos[0], next_wp[1] - pos[1]])
         local_command_point = R.T.dot(local_command_point)
         result["target_point"] = local_command_point
+        result["target_point"] = np.array([-5.0, 0.0])
 
         return result
 
@@ -538,7 +539,15 @@ class DisplayInterface(object):
             (0, 0, 255),
             1,
         )
-
+        surface = cv2.putText(
+            surface,
+            str(input_data["target_point"]),
+            (20, 500),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 0, 255),
+            1,
+        )
         surface = cv2.putText(
             surface,
             "Left  View",
