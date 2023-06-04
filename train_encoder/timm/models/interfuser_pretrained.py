@@ -1067,6 +1067,8 @@ class InterfuserPretrained(nn.Module):
         velocity = velocity.repeat(1, 400, 32)
         traffic_feature_with_vel = torch.cat([traffic_feature, velocity], dim=2)
         traffic = self.traffic_pred_head(traffic_feature_with_vel)
+
+        traffic_state_feature = is_junction_feature
         return (
             traffic,
             waypoints,
@@ -1075,6 +1077,7 @@ class InterfuserPretrained(nn.Module):
             stop_sign,
             traffic_feature,
             waypoints_feature[:, 0],
+            traffic_state_feature,
         )
 
 

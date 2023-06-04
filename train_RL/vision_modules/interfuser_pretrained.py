@@ -4,7 +4,7 @@ import os
 import pathlib
 import time
 from collections import deque
-from typing import Tuple
+from typing import List, Tuple
 
 import carla
 import cv2
@@ -34,9 +34,13 @@ except ImportError:
 
 
 class InterFuserPretrainedVisionModule(VisionModule):
-    output_shape: Tuple[int] = (256,)
-    low: float = -5.0
-    high: float = 5.0
+    output_shape: List[Tuple] = [
+        (20, 20, 7),
+        (256,),
+        (256,),
+    ]
+    low: float = -np.inf
+    high: float = np.inf
 
     def __init__(
         self,
@@ -257,6 +261,7 @@ class InterFuserPretrainedVisionModule(VisionModule):
                 stop_sign,
                 bev_feature,
                 target_feature,
+                traffic_state_feature,
             ) = self.net(input_data)
 
         self.traffic_meta = traffic_meta.detach().cpu().numpy()[0]
@@ -270,7 +275,13 @@ class InterFuserPretrainedVisionModule(VisionModule):
         )
         self.stop_sign = self.softmax(stop_sign).detach().cpu().numpy().reshape(-1)[0]
 
-        return target_feature.squeeze(0).cpu().numpy()
+        traffic_meta_np = traffic_meta.detach().cpu().numpy()[0].reshape(20, 20, -1)
+
+        return [
+            traffic_meta_np.reshape(20, 20, -1),
+            target_feature.squeeze(0).cpu().numpy(),
+            traffic_state_feature.detach().cpu().numpy()[0],
+        ]
 
     def _get_position(self, tick_data):
         gps = tick_data["gps"]

@@ -1,4 +1,4 @@
-from typing import Any, List, Protocol, Tuple
+from typing import Any, List, Protocol, Tuple, Union
 
 import numpy as np
 import pygame
@@ -11,11 +11,11 @@ class VisionModule(Protocol):
     the environment to provide vision encoding and selected action postprocessing
     """
 
-    output_shape: Tuple
+    output_shape: Union[Tuple, List]
     high: float
     low: float
 
-    def __call__(self, input: WorldState) -> np.ndarray:
+    def __call__(self, input: WorldState) -> Union[np.ndarray, List[np.ndarray]]:
         """
         Returns the vision module encoded vector output based on the current step's world
         state information

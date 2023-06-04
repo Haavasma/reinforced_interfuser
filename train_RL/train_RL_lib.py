@@ -116,6 +116,21 @@ def train(config: TrainingConfig) -> None:
         "conditional_net", ConditionalComplexInputNetwork
     )
 
+    conv_filters = (
+        [
+            [16, [6, 8], [3, 4]],
+            [32, [6, 6], 4],
+            [256, [9, 9], 1],
+        ],
+    )
+
+    if config["vision_module"] == "interfuser_pretrained":
+        conv_filters = [
+            [16, [5, 5], 2],
+            [32, [5, 5], 2],
+            [256, [5, 5], 2],
+        ]
+
     algo_config = (
         trainer_config.rollouts(
             num_rollout_workers=config["workers"] if config["workers"] > 1 else 0,
@@ -142,11 +157,7 @@ def train(config: TrainingConfig) -> None:
             model={
                 "custom_model": "conditional_net",
                 "post_fcnet_hiddens": [1024, 512, 256],
-                "conv_filters": [
-                    [16, [6, 8], [3, 4]],
-                    [32, [6, 6], 4],
-                    [256, [9, 9], 1],
-                ],
+                "conv_filters": conv_filters,
                 "use_attention": False,
                 "framestack": True,
                 "custom_model_config": {"num_conditional_inputs": 6},
@@ -157,7 +168,7 @@ def train(config: TrainingConfig) -> None:
         #    evaluation_duration_unit="episodes",
         #    evaluation_duration=10,
         #    evaluation_config={"env_config": {"is_eval": True}},
-        #)
+        # )
         .callbacks(CustomCallback)
         .framework("torch")
     )

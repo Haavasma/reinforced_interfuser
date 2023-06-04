@@ -196,7 +196,7 @@ class CarlaEnvironment(gym.Env):
 
         self._rgb_transform = create_carla_rgb_transform(self.config["image_resize"])
 
-        self._prev_obs: Optional[Dict] = None
+        self._prev_obs: Optional[dict] = None
 
         print("INITIALIZING ENVIRONMENT")
 
@@ -278,14 +278,26 @@ class CarlaEnvironment(gym.Env):
         if self.vision_module is None:
             raise ValueError("Vision module is not set")
 
-        observation_space_dict = {
-            "vision_encoding": Box(
-                low=self.vision_module.low,
-                high=self.vision_module.high,
-                shape=self.vision_module.output_shape,
-                dtype=np.float32,
-            ),
-        }
+        observation_space_dict = {}
+
+        if isinstance(self.vision_module.output_shape, list):
+            for i, output_shape in enumerate(self.vision_module.output_shape):
+                observation_space_dict[f"vision_encoding_{i}"] = Box(
+                    low=self.vision_module.low,
+                    high=self.vision_module.high,
+                    shape=output_shape,
+                    dtype=np.float32,
+                )
+
+        else:
+            observation_space_dict["vision_encoding"] = (
+                Box(
+                    low=self.vision_module.low,
+                    high=self.vision_module.high,
+                    shape=self.vision_module.output_shape,
+                    dtype=np.float32,
+                ),
+            )
 
         observation_space_dict = self._state_observation_space(observation_space_dict)
 
@@ -368,7 +380,7 @@ class CarlaEnvironment(gym.Env):
 
         return self._prev_obs
 
-    def _get_obs_without_vision(self):
+    def _get_obs_without_vision(self) -> dict:
         observation = self._setup_observation_state()
 
         if self.config["concat_images"]:
@@ -406,20 +418,25 @@ class CarlaEnvironment(gym.Env):
 
         return observation
 
-    def _get_obs_with_vision(self):
+    def _get_obs_with_vision(self) -> dict:
         if self.vision_module is None:
             raise ValueError("Vision module is not set")
 
         observation = self._setup_observation_state()
         vision_encoding = self.vision_module(self.state)
 
+        if isinstance(vision_encoding, list):
+            for i, encoding in enumerate(vision_encoding):
+                observation[f"vision_encoding_{i}"] = encoding
+
+        else:
+            observation["vision_encoding"] = vision_encoding
         # print("VISION ENCODING: ", vision_encoding)
         # print("SHAPE: ", vision_encoding.shape)
         # print("MEAN: ", vision_encoding.mean())
         # print("MAX: ", vision_encoding.max())
         # print("MIN: ", vision_encoding.min())
         # print("STD: ", vision_encoding.std())
-        observation["vision_encoding"] = vision_encoding
         return observation
 
     def _setup_observation_state(self) -> dict:
