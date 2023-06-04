@@ -34,7 +34,7 @@ echo "Total of $SLURM_NTASKS cores"
 # source /cluster/home/haavasma/master/rl_train/bin/activate
 
 
-workers=6
+workers=5
 gpus=2
 python train_RL_lib.py --workers $workers --gpus $gpus 
 pkill -f CarlaUE4
