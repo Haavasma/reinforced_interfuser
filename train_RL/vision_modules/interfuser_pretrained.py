@@ -331,6 +331,7 @@ class InterFuserPretrainedVisionModule(VisionModule):
             return new_action
 
         if self.postprocess:
+            print("USING POSTPROCESS ACTION: ", self.throttle)
             return Action(
                 throttle=self.throttle
                 if self.throttle < action.throttle
