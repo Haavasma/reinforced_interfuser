@@ -340,18 +340,18 @@ class CarlaEnvironment(gym.Env):
         return self._get_obs(), self._metrics
 
     def render(self, mode="vision_module") -> Optional[np.ndarray]:
-        surface = None
-        if self.render_mode == "human":
+        if mode == "human":
             if self._renderer is None:
                 self._renderer = WorldStateRenderer()
 
             self._renderer.render(self.state)
             return None
-        if self.render_mode == "vision_module" and self.vision_module is not None:
+        elif mode == "vision_module" and self.vision_module is not None:
             surface = np.array(self.vision_module.get_auxilliary_render())
+            return surface
             # return np.transpose(np.array(surface), axes=(1, 0, 2))
 
-        if surface is None:
+        else:
             additional_text = {}
 
             if self._reward is not None:
@@ -365,9 +365,9 @@ class CarlaEnvironment(gym.Env):
                 self.state,
                 additional_text=additional_text,
             )
-            surface = pygame.surfarray.array3d(pygame_surface).swapaxes(0, 1)
+            np_array = pygame.surfarray.array3d(pygame_surface).swapaxes(0, 1)
 
-        return surface
+            return np_array
 
     def _get_obs(self):
         self._prev_obs = (

@@ -15,7 +15,7 @@ from ray.rllib.policy import Policy
 from ray.rllib.utils.typing import PolicyID
 import random
 
-N_EPISODES_PER_VIDEO_ITERATION = 50
+N_EPISODES_PER_VIDEO_ITERATION = 1
 
 
 class CustomCallback(DefaultCallbacks):
@@ -59,7 +59,9 @@ class CustomCallback(DefaultCallbacks):
 
         # iteration = self.episode_iteration.get(index, 0) + 1
 
+        print("STARTING EPISODE")
         if random.randint(1, N_EPISODES_PER_VIDEO_ITERATION) == 1:
+            print("STARTING RECORDER")
             if self.video_recorder is None:
                 env = base_env.get_sub_environments()[index]
 
@@ -93,7 +95,9 @@ class CustomCallback(DefaultCallbacks):
         )
 
     def on_episode_end(self, worker, base_env, policies, episode, env_index, **kwargs):
+        print("STOPPING EPISODE")
         if self.video_recorder is not None:
+            print("STOPPING RECORDER")
             self.video_recorder.close()
             self.video_recorder = None
 

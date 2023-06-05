@@ -34,11 +34,7 @@ except ImportError:
 
 
 class InterFuserPretrainedVisionModule(VisionModule):
-    output_shape: List[Tuple] = [
-        (20, 20, 7),
-        (256,),
-        (256,),
-    ]
+    output_shape: Tuple = (256,)
 
     # output_shape: Tuple = (256,)
     low: float = -np.inf
@@ -261,7 +257,7 @@ class InterFuserPretrainedVisionModule(VisionModule):
                 stop_sign,
                 bev_feature,
                 target_feature,
-                traffic_state_feature,
+                _,
             ) = self.net(input_data)
 
         self.traffic_meta = traffic_meta.detach().cpu().numpy()[0]
@@ -275,15 +271,15 @@ class InterFuserPretrainedVisionModule(VisionModule):
         )
         self.stop_sign = self.softmax(stop_sign).detach().cpu().numpy().reshape(-1)[0]
 
-        traffic_meta_np = traffic_meta.detach().cpu().numpy()[0].reshape(20, 20, -1)
+        # traffic_meta_np = traffic_meta.detach().cpu().numpy()[0].reshape(20, 20, -1)
 
-        return [
-            traffic_meta_np.reshape(20, 20, -1),
-            target_feature.squeeze(0).cpu().numpy(),
-            traffic_state_feature.detach().cpu().numpy()[0],
-        ]
+        # return [
+        #     traffic_meta_np.reshape(20, 20, -1),
+        #     target_feature.squeeze(0).cpu().numpy(),
+        #     traffic_state_feature.detach().cpu().numpy()[0],
+        # ]
 
-        # return target_feature.squeeze(0).cpu().numpy()
+        return target_feature.squeeze(0).cpu().numpy()
 
     def _get_position(self, tick_data):
         gps = tick_data["gps"]
@@ -317,9 +313,7 @@ class InterFuserPretrainedVisionModule(VisionModule):
                 self.traffic_meta_moving_avg,
             )
 
-            if brake < 0.05:
-                brake = 0.0
-            if brake > 0.1:
+            if brake:
                 throttle = 0.0
 
             self.throttle = throttle
@@ -338,9 +332,11 @@ class InterFuserPretrainedVisionModule(VisionModule):
 
         if self.postprocess:
             return Action(
-                throttle=self.throttle,
+                throttle=self.throttle
+                if self.throttle < action.throttle
+                else action.throttle,
                 steer=action.steer,
-                brake=action.brake,
+                brake=1.0 if self.brake else action.brake,
                 reverse=action.reverse,
             )
         else:

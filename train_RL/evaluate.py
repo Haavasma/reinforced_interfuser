@@ -217,9 +217,9 @@ def make_carla_env(
             vision_module = InterFuserPretrainedVisionModule(
                 weights_file,
                 use_target_feature=True,
-                use_imitation_action=True,
+                # use_imitation_action=False,
                 render_imitation=False,
-                postprocess=False,
+                postprocess=True,
             )
             episode_config = interfuser_config()
 
@@ -236,7 +236,6 @@ def make_carla_env(
             vision_module,
             reward_function,
             speed_controller,
-            render_mode="vision_module",
         )
         env.seed(seed + i)
 
