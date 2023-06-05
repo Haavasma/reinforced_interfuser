@@ -172,7 +172,7 @@ class CarlaEnvironment(gym.Env):
     vision_module: Optional[VisionModule]
     reward_function: Callable[[WorldState, ScenarioData], Tuple[float, bool]]
     speed_controller: PIDController
-    render_mode: str = "computer"
+    render_mode: str = "rgb_array"
 
     def __post_init__(self):
         """

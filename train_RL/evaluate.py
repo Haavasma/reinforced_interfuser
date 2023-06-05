@@ -217,7 +217,7 @@ def make_carla_env(
             vision_module = InterFuserPretrainedVisionModule(
                 weights_file,
                 use_target_feature=True,
-                # use_imitation_action=False,
+                use_imitation_action=True,
                 render_imitation=False,
                 postprocess=True,
             )
