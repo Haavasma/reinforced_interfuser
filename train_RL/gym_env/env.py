@@ -172,7 +172,7 @@ class CarlaEnvironment(gym.Env):
     vision_module: Optional[VisionModule]
     reward_function: Callable[[WorldState, ScenarioData], Tuple[float, bool]]
     speed_controller: PIDController
-    render_mode: str = "rgb_array"
+    render_mode: str = "computer"
 
     def __post_init__(self):
         """
@@ -339,19 +339,19 @@ class CarlaEnvironment(gym.Env):
 
         return self._get_obs(), self._metrics
 
-    def render(self, mode="computer") -> Optional[np.ndarray]:
-        if mode == "human":
+    def render(self, mode="vision_module") -> Optional[np.ndarray]:
+        surface = None
+        if self.render_mode == "human":
             if self._renderer is None:
                 self._renderer = WorldStateRenderer()
 
             self._renderer.render(self.state)
             return None
-        elif mode == "vision_module" and self.vision_module is not None:
+        if self.render_mode == "vision_module" and self.vision_module is not None:
             surface = np.array(self.vision_module.get_auxilliary_render())
-            return surface
             # return np.transpose(np.array(surface), axes=(1, 0, 2))
 
-        else:
+        if surface is None:
             additional_text = {}
 
             if self._reward is not None:
@@ -365,9 +365,9 @@ class CarlaEnvironment(gym.Env):
                 self.state,
                 additional_text=additional_text,
             )
-            np_array = pygame.surfarray.array3d(pygame_surface).swapaxes(0, 1)
+            surface = pygame.surfarray.array3d(pygame_surface).swapaxes(0, 1)
 
-            return np_array
+        return surface
 
     def _get_obs(self):
         self._prev_obs = (

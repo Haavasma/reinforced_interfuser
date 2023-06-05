@@ -175,12 +175,12 @@ def train(config: EvaluationConfig) -> None:
         local_dir="./models/",
         fail_fast="RAISE",
         callbacks=[
-            CustomWandbLoggerCallback(
-                project="Sensor fusion AD RL",
-                group=run_id,
-                log_config=True,
-                upload_checkpoints=True,
-            ),
+            # CustomWandbLoggerCallback(
+            #     project="Sensor fusion AD RL",
+            #     group=run_id,
+            #     log_config=True,
+            #     upload_checkpoints=True,
+            # ),
         ],
     )
 
@@ -217,7 +217,7 @@ def make_carla_env(
             vision_module = InterFuserPretrainedVisionModule(
                 weights_file,
                 use_target_feature=True,
-                # use_imitation_action=True,
+                use_imitation_action=True,
                 render_imitation=False,
                 postprocess=False,
             )
@@ -236,6 +236,7 @@ def make_carla_env(
             vision_module,
             reward_function,
             speed_controller,
+            render_mode="vision_module",
         )
         env.seed(seed + i)
 

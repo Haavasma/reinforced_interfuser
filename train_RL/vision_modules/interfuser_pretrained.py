@@ -4,19 +4,19 @@ import os
 import pathlib
 import time
 from collections import deque
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import carla
 import cv2
 import numpy as np
 import torch
 from episode_manager.episode_manager import Action, WorldState
+from gym_env.route_planner import RoutePlanner, find_relative_target_waypoint
 from gym_env.vision import VisionModule
 from leaderboard.autoagents import autonomous_agent
 from PIL import Image
 from team_code.interfuser_config import GlobalConfig
 from team_code.interfuser_controller import InterfuserController
-from team_code.planner import RoutePlanner
 from team_code.render import render, render_self_car, render_waypoints
 from team_code.tracker import Tracker
 from timm.models import create_model
@@ -34,7 +34,7 @@ except ImportError:
 
 
 class InterFuserPretrainedVisionModule(VisionModule):
-    output_shape: Tuple = [
+    output_shape: List[Tuple] = [
         (20, 20, 7),
         (256,),
         (256,),
@@ -123,7 +123,7 @@ class InterFuserPretrainedVisionModule(VisionModule):
         return
 
     def set_global_plan(self, global_plan):
-        self._route_planner = RoutePlanner(4.0, 50.0)
+        self._route_planner = RoutePlanner()
         self._route_planner.set_route(global_plan, True)
         self.initialized = True
 
@@ -186,17 +186,15 @@ class InterFuserPretrainedVisionModule(VisionModule):
         result["lidar"] = self.prev_lidar
 
         result["gps"] = pos
-        next_wp, next_cmd = self._route_planner.run_step(pos)
+        _, position, tar_point, next_cmd = self._route_planner.run_step(gps)
         result["next_command"] = next_cmd.value
         result["measurements"] = [pos[0], pos[1], compass, speed]
 
-        theta = compass + np.pi / 2
-        R = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
+        relative_target_waypoint = find_relative_target_waypoint(
+            position, tar_point, compass
+        )
 
-        local_command_point = np.array([next_wp[0] - pos[0], next_wp[1] - pos[1]])
-        local_command_point = R.T.dot(local_command_point)
-        result["target_point"] = local_command_point
-        result["target_point"] = np.array([-5.0, 0.0])
+        result["target_point"] = relative_target_waypoint
 
         return result
 
@@ -293,6 +291,41 @@ class InterFuserPretrainedVisionModule(VisionModule):
         return gps
 
     def postprocess_action(self, action: Action) -> Action:
+        if self.postprocess or self.use_imitation_action:
+            if self.step % 2 == 0 or self.step < 4:
+                traffic_meta = self.tracker.update_and_predict(
+                    self.traffic_meta.reshape(20, 20, -1),
+                    self.tick_data["gps"],
+                    self.tick_data["compass"],
+                    self.step // 2,
+                )
+                traffic_meta = traffic_meta.reshape(400, -1)
+                self.traffic_meta_moving_avg = (
+                    self.momentum * self.traffic_meta_moving_avg
+                    + (1 - self.momentum) * traffic_meta
+                )
+            self.traffic_meta = self.traffic_meta_moving_avg
+            self.tick_data["raw"] = self.traffic_meta
+            self.tick_data["bev_feature"] = self.bev_feature
+
+            steer, throttle, brake, self.meta_infos = self.controller.run_step(
+                self.velocity,
+                self.pred_waypoints,
+                self.is_junction,
+                self.traffic_light_state,
+                self.stop_sign,
+                self.traffic_meta_moving_avg,
+            )
+
+            if brake < 0.05:
+                brake = 0.0
+            if brake > 0.1:
+                throttle = 0.0
+
+            self.throttle = throttle
+            self.brake = brake
+            self.steer = steer
+
         if self.use_imitation_action:
             new_action = Action(
                 throttle=self.throttle,
@@ -313,7 +346,10 @@ class InterFuserPretrainedVisionModule(VisionModule):
         else:
             return action
 
-    def get_auxilliary_render(self) -> pygame.Surface:
+    def get_auxilliary_render(self) -> Optional[pygame.Surface]:
+        if not self.postprocess and not self.use_imitation_action:
+            return None
+
         if self.step % 2 == 0 or self.step < 4:
             traffic_meta = self.tracker.update_and_predict(
                 self.traffic_meta.reshape(20, 20, -1),
@@ -330,26 +366,8 @@ class InterFuserPretrainedVisionModule(VisionModule):
         self.tick_data["raw"] = self.traffic_meta
         self.tick_data["bev_feature"] = self.bev_feature
 
-        steer, throttle, brake, self.meta_infos = self.controller.run_step(
-            self.velocity,
-            self.pred_waypoints,
-            self.is_junction,
-            self.traffic_light_state,
-            self.stop_sign,
-            self.traffic_meta_moving_avg,
-        )
-
-        if brake < 0.05:
-            brake = 0.0
-        if brake > 0.1:
-            throttle = 0.0
-
-        self.throttle = throttle
-        self.brake = brake
-        self.steer = steer
-
         self.control = carla.VehicleControl(
-            throttle=throttle, steer=steer, brake=brake, reverse=False
+            throttle=self.throttle, steer=self.steer, brake=self.brake, reverse=False
         )
         surround_map, box_info = render(
             self.traffic_meta.reshape(20, 20, 7), pixels_per_meter=20
