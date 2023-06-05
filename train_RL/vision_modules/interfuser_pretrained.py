@@ -321,6 +321,7 @@ class InterFuserPretrainedVisionModule(VisionModule):
             self.steer = steer
 
         if self.use_imitation_action:
+            print("USING IMITATION ACTION: ", self.throttle)
             new_action = Action(
                 throttle=self.throttle,
                 steer=self.steer,
