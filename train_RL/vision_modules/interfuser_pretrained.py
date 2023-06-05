@@ -321,7 +321,6 @@ class InterFuserPretrainedVisionModule(VisionModule):
             self.steer = steer
 
         if self.use_imitation_action:
-            print("USING IMITATION ACTION: ", self.throttle)
             new_action = Action(
                 throttle=self.throttle,
                 steer=self.steer,
@@ -332,7 +331,6 @@ class InterFuserPretrainedVisionModule(VisionModule):
             return new_action
 
         if self.postprocess:
-            print("USING POSTPROCESS ACTION: ", self.throttle)
             return Action(
                 throttle=self.throttle
                 if self.throttle < action.throttle
