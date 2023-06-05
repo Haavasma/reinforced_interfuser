@@ -34,11 +34,13 @@ except ImportError:
 
 
 class InterFuserPretrainedVisionModule(VisionModule):
-    output_shape: List[Tuple] = [
+    output_shape: Tuple = [
         (20, 20, 7),
         (256,),
         (256,),
     ]
+
+    # output_shape: Tuple = (256,)
     low: float = -np.inf
     high: float = np.inf
 
@@ -282,6 +284,8 @@ class InterFuserPretrainedVisionModule(VisionModule):
             target_feature.squeeze(0).cpu().numpy(),
             traffic_state_feature.detach().cpu().numpy()[0],
         ]
+
+        # return target_feature.squeeze(0).cpu().numpy()
 
     def _get_position(self, tick_data):
         gps = tick_data["gps"]

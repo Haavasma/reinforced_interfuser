@@ -30,24 +30,19 @@ from rl_lib.complex_input_network import ConditionalComplexInputNetwork
 from rl_lib.wandb_logging import CustomWandbLoggerCallback
 from vision_modules.interfuser import InterFuserVisionModule
 from vision_modules.interfuser_pretrained import InterFuserPretrainedVisionModule
-from vision_modules.transfuser import TransfuserVisionModule, setup_transfuser_backbone
 
 # rl_config = {"policy_type": "MultiInputPolicy", "total_timesteps": 1_000_000}
 
 
-class TrainingConfig(TypedDict):
-    workers: int
-    gpus: int
-    resume: bool
-    eval: bool
+class EvaluationConfig(TypedDict):
     vision_module: str
     weights: str
-    steps: int
     traffic_type: TrafficType
     blind_ablation: bool
+    checkpoint: str
 
 
-def validate_training_config(config: TrainingConfig) -> None:
+def validate_training_config(config: EvaluationConfig) -> None:
     """
     Throws an error if the config is not valid for the given system.
     """
@@ -58,7 +53,7 @@ def validate_training_config(config: TrainingConfig) -> None:
         )
 
 
-def train(config: TrainingConfig) -> None:
+def train(config: EvaluationConfig) -> None:
     validate_training_config(config)
 
     run_type = (
@@ -71,7 +66,6 @@ def train(config: TrainingConfig) -> None:
 
     run_id = get_run_name(
         run_type,
-        resume=config["resume"],
     )
 
     # run_id = "baseline_NO_TRAFFIC_5b6f404e2a0447839d0e52460fc7c12c"
@@ -89,15 +83,9 @@ def train(config: TrainingConfig) -> None:
         "image_resize": (100, 200),
     }
 
-    eval_config: CarlaEnvironmentConfiguration = copy.deepcopy(carla_config)
-    eval_config["towns"] = None
-    eval_config["town_change_frequency"] = None
-
     env_name = "carla_env"
     create_env = make_carla_env(
         carla_config,
-        eval_config,
-        config["gpus"],
         config["vision_module"],
         config["weights"],
         seed=69,
@@ -108,9 +96,6 @@ def train(config: TrainingConfig) -> None:
     trainer_config = APPOConfig()
 
     # gpu_fraction = (config["gpus"] / (config["workers"] + (1 if config["workers"] > 1 else 0))) - 0.0001
-    fraction = (config["gpus"]) / (config["workers"] + 2)
-
-    print("FRACTION: ", fraction)
 
     ModelCatalog.register_custom_model(
         "conditional_net", ConditionalComplexInputNetwork
@@ -131,7 +116,7 @@ def train(config: TrainingConfig) -> None:
 
     algo_config = (
         trainer_config.rollouts(
-            num_rollout_workers=config["workers"] if config["workers"] > 1 else 0,
+            num_rollout_workers=0,
             num_envs_per_worker=1,
             create_env_on_local_worker=True,
             recreate_failed_workers=False,
@@ -142,10 +127,9 @@ def train(config: TrainingConfig) -> None:
             worker_restore_timeout_s=60,
             num_consecutive_worker_failures_tolerance=0,
         )
-        .reporting(min_sample_timesteps_per_iteration=2048)
+        .reporting(min_sample_timesteps_per_iteration=50)
         .resources(
-            num_gpus=fraction,
-            num_gpus_per_worker=fraction,
+            num_gpus=1,
         )
         .environment(env_name, disable_env_checking=True)
         .exploration()
@@ -161,67 +145,31 @@ def train(config: TrainingConfig) -> None:
                 "custom_model_config": {"num_conditional_inputs": 6},
             },
         )
-        # .evaluation(
-        #    evaluation_interval=10,
-        #    evaluation_duration_unit="episodes",
-        #    evaluation_duration=10,
-        #    evaluation_config={"env_config": {"is_eval": True}},
-        # )
+        .evaluation(
+            evaluation_interval=1,
+            evaluation_duration_unit="episodes",
+            evaluation_duration=25,
+            evaluation_config={"env_config": {"is_eval": True}},
+        )
         .callbacks(CustomCallback)
         .framework("torch")
     )
 
-    experiment_dir = os.path.join("./models", run_id)
-    should_resume = config["resume"]
+    checkpoint = config["checkpoint"]
 
-    checkpoint = ""
-
-    if should_resume:
-        has_checkpoints = False
-        if not os.path.exists(experiment_dir):
-            print(f"No experiment directory found at {experiment_dir}")
-            should_resume = False
-        else:
-            for trial_dir in os.listdir(experiment_dir):
-                trial_path = os.path.join(experiment_dir, trial_dir)
-                print(f"TRIAL PATH: {trial_path}")
-                if os.path.isdir(trial_path):
-                    print(f"SUBDIRS: {os.listdir(trial_path)}")
-                    tmp_checkpoints = [
-                        entry
-                        for entry in os.listdir(trial_path)
-                        if entry.startswith("checkpoint_")
-                    ]
-
-                    if len(tmp_checkpoints) > 0:
-                        tmp_checkpoints.sort()
-                        if checkpoint == "" or tmp_checkpoints[-1] > checkpoint:
-                            checkpoint = os.path.join(trial_path, tmp_checkpoints[-1])
-                            print("NEW CHECKPOINT: ", checkpoint)
-
-                        print(
-                            f"Trial {trial_dir} has the following checkpoints: {tmp_checkpoints}"
-                        )
-                        has_checkpoints = True
-                    else:
-                        print(f"Trial {trial_dir} has no checkpoints")
-        if not has_checkpoints:
-            should_resume = False
-
-    print("FINAL CHECKPOINT: ", checkpoint)
     trainer = CustomAPPO
 
     tune.run(
         trainer,
         name=run_id,
         config=algo_config.to_dict(),
-        stop={"timesteps_total": config["steps"]},
-        resume=True if should_resume else False,
+        stop={"training_iteration": 2},
+        # resume=True if should_resume else False,
         # raise_on_failed_trial=True,
         checkpoint_freq=1,
         checkpoint_at_end=False,
         keep_checkpoints_num=5,
-        restore=checkpoint if should_resume else None,
+        restore=checkpoint,
         trial_name_creator=lambda _: run_id,
         # checkpoint_score_attr="episode_reward_mean",
         local_dir="./models/",
@@ -232,7 +180,6 @@ def train(config: TrainingConfig) -> None:
                 group=run_id,
                 log_config=True,
                 upload_checkpoints=True,
-                resume=should_resume,
             ),
         ],
     )
@@ -240,8 +187,6 @@ def train(config: TrainingConfig) -> None:
 
 def make_carla_env(
     carla_config: CarlaEnvironmentConfiguration,
-    eval_config: CarlaEnvironmentConfiguration,
-    gpus: int,
     vision_module_name: str,
     weights_file: str,
     seed: int = 0,
@@ -252,9 +197,6 @@ def make_carla_env(
         print("WORKER INDEX: ", i)
 
         # is_eval is set for evaluation workers
-        evaluation = "is_eval" in env_config and env_config["is_eval"]
-
-        print("EVALUATION: ", evaluation)
         episode_config = baseline_config()
         if blind:
             print("BLIND MODE: ")
@@ -262,14 +204,7 @@ def make_carla_env(
             episode_config.car_config.lidar["enabled"] = False
 
         vision_module = None
-
-        if vision_module_name == "transfuser":
-            config = GlobalConfig(setting="eval")
-            backbone = setup_transfuser_backbone(
-                config, weights_file, device=f"cuda:{i%gpus}"
-            )
-            vision_module = TransfuserVisionModule(backbone, config)
-        elif vision_module_name == "interfuser":
+        if vision_module_name == "interfuser":
             vision_module = InterFuserVisionModule(
                 weights_file,
                 use_target_feature=False,
@@ -288,17 +223,15 @@ def make_carla_env(
             )
             episode_config = interfuser_config()
 
-        episode_config.training_type = (
-            TrainingType.EVALUATION if evaluation else TrainingType.TRAINING
-        )
+        episode_config.training_type = TrainingType.EVALUATION
 
         episode_manager = EpisodeManager(
-            episode_config, gpu_device=i % gpus, server_wait_time=15 + (i * 10)
+            episode_config, gpu_device=0, server_wait_time=15 + (i * 10)
         )
         speed_controller = TestSpeedController()
 
         env = CarlaEnvironment(
-            eval_config if evaluation else carla_config,
+            carla_config,
             episode_manager,
             vision_module,
             reward_function,
@@ -311,34 +244,12 @@ def make_carla_env(
     return _init
 
 
-def get_run_name(run_type: str, resume=False) -> str:
-    run_id = ""
-    if resume:
-        with open("./models/run_name.pkl", "rb") as f:
-            run_id = pickle.load(f)
-    else:
-        run_id = f"{run_type}_{uuid.uuid4().hex}"
-
-    with open("./models/run_name.pkl", "wb") as f:
-        pickle.dump(run_id, f)
-
-    return run_id
+def get_run_name(run_type: str) -> str:
+    return f"{run_type}_{uuid.uuid4().hex}"
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Parse command line arguments")
-
-    parser.add_argument(
-        "--workers", type=int, default=1, help="Amount of workers (default: 1)"
-    )
-
-    parser.add_argument(
-        "--gpus", type=int, default=1, help="Amount of GPUS available (default: 1)"
-    )
-
-    parser.add_argument(
-        "--resume", action="store_true", help="Resume training (default: False)"
-    )
 
     parser.add_argument(
         "--vision-module",
@@ -365,19 +276,14 @@ if __name__ == "__main__":
         help="Removes all sensors",
     )
 
-    parser.add_argument("--steps", type=int, default=1_000_000, help="Number of steps")
-
     parser.add_argument("--weights", type=str, default="", help="Path to weights file")
+    parser.add_argument(
+        "--checkpoint", type=str, default="", help="Path to model checkpoint"
+    )
 
     args = parser.parse_args()
 
-    workers = args.workers
-
-    gpus = args.gpus
-
     weights = str(pathlib.Path(args.weights).absolute().resolve())
-
-    steps = int(args.steps)
 
     no_traffic = args.no_traffic
     no_scenarios = args.no_scenarios
@@ -391,14 +297,10 @@ if __name__ == "__main__":
 
     train(
         {
-            "workers": workers,
-            "gpus": gpus,
-            "resume": bool(args.resume),
             "vision_module": args.vision_module,
             "weights": weights,
-            "eval": True,
-            "steps": steps,
             "traffic_type": traffic_type,
             "blind_ablation": args.blind,
+            "checkpoint": args.checkpoint,
         }
     )

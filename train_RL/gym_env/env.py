@@ -290,13 +290,11 @@ class CarlaEnvironment(gym.Env):
                 )
 
         else:
-            observation_space_dict["vision_encoding"] = (
-                Box(
-                    low=self.vision_module.low,
-                    high=self.vision_module.high,
-                    shape=self.vision_module.output_shape,
-                    dtype=np.float32,
-                ),
+            observation_space_dict["vision_encoding"] = Box(
+                low=self.vision_module.low,
+                high=self.vision_module.high,
+                shape=self.vision_module.output_shape,
+                dtype=np.float32,
             )
 
         observation_space_dict = self._state_observation_space(observation_space_dict)
