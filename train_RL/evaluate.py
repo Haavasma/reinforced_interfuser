@@ -23,7 +23,7 @@ from gym_env.env import (
     CarlaEnvironmentConfiguration,
     TestSpeedController,
 )
-from reward_functions.main import reward_function
+from reward_functions.evaluation import evaluation_reward
 from rl_lib.appo import CustomAPPO
 from rl_lib.callback import CustomCallback
 from rl_lib.complex_input_network import ConditionalComplexInputNetwork
@@ -234,7 +234,7 @@ def make_carla_env(
             carla_config,
             episode_manager,
             vision_module,
-            reward_function,
+            evaluation_reward,
             speed_controller,
         )
         env.seed(seed + i)

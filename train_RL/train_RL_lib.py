@@ -284,7 +284,7 @@ def make_carla_env(
                 use_target_feature=True,
                 # use_imitation_action=True,
                 render_imitation=False,
-                postprocess=True,
+                postprocess=False,
             )
             episode_config = interfuser_config()
 

@@ -55,7 +55,7 @@ def reward_function(state: WorldState, data: ScenarioData) -> Tuple[float, bool]
     ego_vehicle_location = state.ego_vehicle_state.privileged.transform.location
     waypoints = data.global_plan_world_coord_privileged
 
-    closest_waypoint_index, distance_diff = _get_closest_waypoint(
+    closest_waypoint_index, distance_diff = get_closest_waypoint(
         ego_vehicle_location, waypoints
     )
 
@@ -64,9 +64,9 @@ def reward_function(state: WorldState, data: ScenarioData) -> Tuple[float, bool]
         waypoints[(closest_waypoint_index + 1) % len(waypoints)][0].location,
     )
 
-    angle = _calculate_angle(wp_0, wp_1)
+    angle = calculate_angle(wp_0, wp_1)
 
-    angle_diff = _calculate_radian_difference(
+    angle_diff = calculate_radian_difference(
         angle, math.radians(state.ego_vehicle_state.compass - 90)
     )
     angle_reward = _calculate_angle_reward(angle_diff)
@@ -75,7 +75,7 @@ def reward_function(state: WorldState, data: ScenarioData) -> Tuple[float, bool]
         return -10, True
 
     # Distance reward
-    distance_reward = _calculate_distance_reward(distance_diff)
+    distance_reward = calculate_distance_reward(distance_diff)
     if distance_reward < 0:
         return -10, True
 
@@ -84,9 +84,7 @@ def reward_function(state: WorldState, data: ScenarioData) -> Tuple[float, bool]
     return result, False
 
 
-def _calculate_distance_reward(distance: float) -> float:
-    max = 2.0
-
+def calculate_distance_reward(distance: float, max=2.0) -> float:
     if distance > max:
         return -1
 
@@ -108,14 +106,14 @@ def _calculate_angle_reward(diff: float) -> float:
     return reward
 
 
-def _calculate_angle(point_1: Location, point_2: Location) -> float:
+def calculate_angle(point_1: Location, point_2: Location) -> float:
     dx = point_2.x - point_1.x
     dy = point_2.y - point_1.y
 
     return math.atan2(dy, dx)
 
 
-def _calculate_radian_difference(angle_1: float, angle_2: float) -> float:
+def calculate_radian_difference(angle_1: float, angle_2: float) -> float:
     diff = angle_1 - angle_2
     return abs(math.atan2(math.sin(diff), math.cos(diff)))
 
@@ -135,7 +133,7 @@ def closest_hazard(state: WorldState) -> float:
     return closest if closest != max_dist else -1
 
 
-def _get_closest_waypoint(
+def get_closest_waypoint(
     ego_vehicle_location: Location,
     waypoints: List[Tuple[Transform, Any]],
 ) -> Tuple[int, float]:

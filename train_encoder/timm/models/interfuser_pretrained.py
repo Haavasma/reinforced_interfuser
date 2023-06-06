@@ -1076,7 +1076,7 @@ class InterfuserPretrained(nn.Module):
             traffic_light_state,
             stop_sign,
             traffic_feature,
-            waypoints_feature[:, 1],
+            waypoints_feature[:, 0],
             traffic_state_feature,
         )
 

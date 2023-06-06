@@ -339,7 +339,7 @@ class CarlaEnvironment(gym.Env):
 
         return self._get_obs(), self._metrics
 
-    def render(self, mode="vision_module") -> Optional[np.ndarray]:
+    def render(self, mode="computer") -> Optional[np.ndarray]:
         if mode == "human":
             if self._renderer is None:
                 self._renderer = WorldStateRenderer()
@@ -527,16 +527,14 @@ class CarlaEnvironment(gym.Env):
             goal_speed, self.state.ego_vehicle_state.speed
         )
 
-        if brake >= 1.0:
-            steering *= 0.5
-            throttle = 0.0
-
         new_action = Action(throttle, brake, reverse, steering)
-
-        # print("NEW ACTION: ", new_action, "\nGOAL SPEED: ", goal_speed)
 
         if self.vision_module is not None:
             new_action = self.vision_module.postprocess_action(new_action)
+
+        if new_action.brake >= 1.0:
+            new_action.steer *= 0.5
+            new_action.throttle = 0.0
 
         # update state with result of using the new action
 
