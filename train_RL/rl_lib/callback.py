@@ -15,7 +15,7 @@ from ray.rllib.policy import Policy
 from ray.rllib.utils.typing import PolicyID
 import random
 
-N_EPISODES_PER_VIDEO_ITERATION = 1
+N_EPISODES_PER_VIDEO_ITERATION = 50
 
 
 class CustomCallback(DefaultCallbacks):
