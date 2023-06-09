@@ -538,6 +538,7 @@ class CarlaEnvironment(gym.Env):
 
         # update state with result of using the new action
 
+        print("NEW ACTION: ", new_action)
         self.state = self.carla_manager.step(new_action)
 
         self._reward, done = self.reward_function(self.state, self.data)

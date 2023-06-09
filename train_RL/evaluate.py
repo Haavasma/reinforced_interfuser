@@ -23,7 +23,7 @@ from gym_env.env import (
     CarlaEnvironmentConfiguration,
     TestSpeedController,
 )
-from reward_functions.evaluation import evaluation_reward
+from reward_functions.main import reward_function
 from rl_lib.appo import CustomAPPO
 from rl_lib.callback import CustomCallback
 from rl_lib.complex_input_network import ConditionalComplexInputNetwork
@@ -148,7 +148,7 @@ def train(config: EvaluationConfig) -> None:
         .evaluation(
             evaluation_interval=1,
             evaluation_duration_unit="episodes",
-            evaluation_duration=25,
+            evaluation_duration=22,
             evaluation_config={"env_config": {"is_eval": True}},
         )
         .callbacks(CustomCallback)
@@ -163,7 +163,7 @@ def train(config: EvaluationConfig) -> None:
         trainer,
         name=run_id,
         config=algo_config.to_dict(),
-        stop={"training_iteration": 2},
+        stop={"training_iteration": 4},
         # resume=True if should_resume else False,
         # raise_on_failed_trial=True,
         checkpoint_freq=1,
@@ -175,12 +175,12 @@ def train(config: EvaluationConfig) -> None:
         local_dir="./models/",
         fail_fast="RAISE",
         callbacks=[
-            # CustomWandbLoggerCallback(
-            #     project="Sensor fusion AD RL",
-            #     group=run_id,
-            #     log_config=True,
-            #     upload_checkpoints=True,
-            # ),
+            CustomWandbLoggerCallback(
+                project="Sensor fusion AD RL",
+                group=run_id,
+                log_config=True,
+                upload_checkpoints=True,
+            ),
         ],
     )
 
@@ -217,9 +217,9 @@ def make_carla_env(
             vision_module = InterFuserPretrainedVisionModule(
                 weights_file,
                 use_target_feature=True,
-                use_imitation_action=True,
+                use_imitation_action=False,
                 render_imitation=False,
-                postprocess=True,
+                postprocess=False,
             )
             episode_config = interfuser_config()
 
@@ -234,7 +234,7 @@ def make_carla_env(
             carla_config,
             episode_manager,
             vision_module,
-            evaluation_reward,
+            reward_function,
             speed_controller,
         )
         env.seed(seed + i)

@@ -15,7 +15,7 @@ from ray.rllib.policy import Policy
 from ray.rllib.utils.typing import PolicyID
 import random
 
-N_EPISODES_PER_VIDEO_ITERATION = 50
+N_EPISODES_PER_VIDEO_ITERATION = 1000000000000000
 
 
 class CustomCallback(DefaultCallbacks):
@@ -43,6 +43,10 @@ class CustomCallback(DefaultCallbacks):
         **kwargs,
     ) -> None:
         # Collect all metrics and average them on the environments
+        if self.video_recorder is not None:
+            self.video_recorder.close()
+            self.video_recorder = None
+
         metrics = {}
         n_sub_envs = len(base_env.get_sub_environments())
         for env in base_env.get_sub_environments():
@@ -92,19 +96,19 @@ class CustomCallback(DefaultCallbacks):
             **kwargs,
         )
 
-    def on_episode_end(self, worker, base_env, policies, episode, env_index, **kwargs):
-        if self.video_recorder is not None:
-            self.video_recorder.close()
-            self.video_recorder = None
-
-        return super().on_episode_end(
-            worker=worker,
-            base_env=base_env,
-            policies=policies,
-            episode=episode,
-            env_index=env_index,
-            **kwargs,
-        )
+    # def on_episode_end(self, worker, base_env, policies, episode, env_index, **kwargs):
+    #     if self.video_recorder is not None:
+    #         self.video_recorder.close()
+    #         self.video_recorder = None
+    #
+    #     return super().on_episode_end(
+    #         worker=worker,
+    #         base_env=base_env,
+    #         policies=policies,
+    #         episode=episode,
+    #         env_index=env_index,
+    #         **kwargs,
+    #     )
 
     def on_evaluate_end(
         self, *, algorithm: Algorithm, evaluation_metrics: dict, **kwargs

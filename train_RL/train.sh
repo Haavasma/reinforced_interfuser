@@ -36,7 +36,7 @@ echo "Total of $SLURM_NTASKS cores"
 
 workers=5
 gpus=2
-python train_RL_lib.py --workers $workers --gpus $gpus 
+python train_RL_lib.py --workers $workers --gpus $gpus --vision-module interfuser_pretrained --weights ./models/interfuser.pth.tar
 pkill -f CarlaUE4
 pkill -f CarlaUE4
 pkill -f ray::RolloutWorker
@@ -44,7 +44,7 @@ pkill -f ray::RolloutWorker
 
 while true
   do 
-python train_RL_lib.py --workers $workers --gpus $gpus --resume
+python train_RL_lib.py --workers $workers --gpus $gpus --vision-module interfuser_pretrained --weights ./models/interfuser.pth.tar --resume
   pkill -f CarlaUE4
   pkill -f CarlaUE4
   pkill -f ray::RolloutWorker

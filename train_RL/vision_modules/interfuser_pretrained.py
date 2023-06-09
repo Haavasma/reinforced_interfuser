@@ -34,11 +34,12 @@ except ImportError:
 
 
 class InterFuserPretrainedVisionModule(VisionModule):
-    output_shape: List[Tuple] = [
-        (256,),
-        (256,),
-    ]
-    # output_shape: Tuple = (256,)
+    # output_shape: List[Tuple] = [
+    #     (20, 20, 7),
+    #     (256,),
+    #     (256,),
+    # ]
+    output_shape: Tuple = (256,)
 
     # output_shape: Tuple = (256,)
     low: float = -5.0
@@ -126,6 +127,7 @@ class InterFuserPretrainedVisionModule(VisionModule):
         self._route_planner = RoutePlanner()
         self._route_planner.set_route(global_plan, True)
         self.initialized = True
+        self.step = -1
 
         return
 
@@ -276,13 +278,14 @@ class InterFuserPretrainedVisionModule(VisionModule):
         self.stop_sign = self.softmax(stop_sign).detach().cpu().numpy().reshape(-1)[0]
 
         # traffic_meta_np = traffic_meta.detach().cpu().numpy()[0].reshape(20, 20, -1)
+        #
+        # return [
+        #     traffic_meta_np.reshape(20, 20, -1),
+        #     target_feature.squeeze(0).cpu().numpy(),
+        #     traffic_state_feature.detach().cpu().numpy()[0],
+        # ]
 
-        return [
-            target_feature.squeeze(0).cpu().numpy(),
-            traffic_state_feature.detach().cpu().numpy()[0],
-        ]
-
-        # return target_feature.squeeze(0).cpu().numpy()
+        return target_feature.squeeze(0).cpu().numpy()
 
     def _get_position(self, tick_data):
         gps = tick_data["gps"]
@@ -290,6 +293,9 @@ class InterFuserPretrainedVisionModule(VisionModule):
         return gps
 
     def postprocess_action(self, action: Action) -> Action:
+        if self.step <= 0:
+            return action
+
         if self.postprocess or self.use_imitation_action:
             if self.step % 2 == 0 or self.step < 4:
                 traffic_meta = self.tracker.update_and_predict(
