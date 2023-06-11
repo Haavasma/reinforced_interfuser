@@ -148,7 +148,7 @@ def train(config: EvaluationConfig) -> None:
         .evaluation(
             evaluation_interval=1,
             evaluation_duration_unit="episodes",
-            evaluation_duration=22,
+            evaluation_duration=17,
             evaluation_config={"env_config": {"is_eval": True}},
         )
         .callbacks(CustomCallback)
@@ -219,7 +219,7 @@ def make_carla_env(
                 use_target_feature=True,
                 use_imitation_action=False,
                 render_imitation=False,
-                postprocess=False,
+                postprocess=True,
             )
             episode_config = interfuser_config()
 

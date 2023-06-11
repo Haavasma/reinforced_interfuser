@@ -1,5 +1,6 @@
 import os
 import pathlib
+import threading
 import time
 import uuid
 from typing import Any, Dict, Optional, Union
@@ -15,7 +16,7 @@ from ray.rllib.policy import Policy
 from ray.rllib.utils.typing import PolicyID
 import random
 
-N_EPISODES_PER_VIDEO_ITERATION = 1000000000000000
+N_EPISODES_PER_VIDEO_ITERATION = 50
 
 
 class CustomCallback(DefaultCallbacks):
@@ -25,6 +26,7 @@ class CustomCallback(DefaultCallbacks):
         path = str(pathlib.Path("./videos/").absolute().resolve())
 
         self.path = str(pathlib.Path(path).absolute().resolve())
+        self.closing = False
 
         self.video_recorder: Optional[VideoRecorder] = None
         if not os.path.exists(self.path):
@@ -44,8 +46,11 @@ class CustomCallback(DefaultCallbacks):
     ) -> None:
         # Collect all metrics and average them on the environments
         if self.video_recorder is not None:
-            self.video_recorder.close()
+            recorder = self.video_recorder
+            threading.Thread(target=recorder.close()).start()
             self.video_recorder = None
+        # self.video_recorder.close()
+        # self.video_recorder = None
 
         metrics = {}
         n_sub_envs = len(base_env.get_sub_environments())
